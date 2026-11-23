@@ -1,0 +1,17 @@
+{
+  "domain": "wled_yaha",
+  "name": "WLED YaHA",
+  "after_dependencies": [
+    "wled"
+  ],
+  "codeowners": [
+    "@Odysseos"
+  ],
+  "config_flow": true,
+  "documentation": "https://github.com/Odysseos/ha_wled_yaha",
+  "integration_type": "hub",
+  "iot_class": "calculated",
+  "issue_tracker": "https://github.com/Odysseos/ha_wled_yaha/issues",
+  "requirements": [],
+  "version": "0.1.0"
+}

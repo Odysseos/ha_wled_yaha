@@ -1,0 +1,147 @@
+{
+  "title": "WLED YaHA",
+  "config": {
+    "step": {
+      "devices": {
+        "title": "WLED garlands",
+        "description": "Choose lights from the native WLED integration. For one segment choose the color light. A master light for multiple segments supports power, brightness and whole-controller presets; direct color control belongs to the segments.",
+        "data": {
+          "lights": "Garlands"
+        }
+      },
+      "scenes": {
+        "title": "{device} · {number}/{total}",
+        "description": "Choose a real WLED preset for each Yandex scene. A dash disables that scene. Numbers are the actual preset IDs, not the remote button order. Review name-based suggestions before saving.\n\n{entity}\n\n{details}",
+        "data": {
+          "alarm": "Alarm",
+          "alice": "Alice",
+          "candle": "Candle",
+          "dinner": "Dinner",
+          "fantasy": "Fantasy",
+          "garland": "Garland",
+          "jungle": "Jungle",
+          "movie": "Movie",
+          "neon": "Neon",
+          "night": "Night",
+          "ocean": "Ocean",
+          "party": "Party",
+          "reading": "Reading",
+          "rest": "Rest",
+          "romance": "Romance",
+          "siren": "Siren",
+          "sunrise": "Sunrise",
+          "sunset": "Sunset"
+        }
+      },
+      "finish": {
+        "title": "Save and export",
+        "description": "{summary}\n\nAutomatic export writes the fragment and reloads YaHA after saving. Then refresh devices in Yandex Smart Home. Select YAML as the device list source in YaHA.",
+        "data": {
+          "auto_export": "Update export automatically",
+          "connect_yaha": "Connect the export to YaHA through packages automatically"
+        }
+      }
+    },
+    "error": {
+      "invalid_light": "Choose an enabled native WLED light.",
+      "no_lights": "Choose at least one garland.",
+      "duplicate_preset": "Assign a preset to only one Yandex scene.",
+      "preset_missing": "The chosen preset was removed. Select another preset or disable this scene.",
+      "validation_failed": "Validation failed. See the details above; the previous export was preserved."
+    },
+    "abort": {
+      "already_configured": "Already configured. Manage all garlands in the integration options.",
+      "no_wled": "First add your garlands through Settings → Devices & services → Add integration → WLED.",
+      "device_missing": "The selected light was removed or disabled. Restart the wizard and select an available light.",
+      "not_loaded": "The integration is not loaded. Check its state in Devices & services.",
+      "exported": "Export saved. Refresh devices in Yandex Smart Home."
+    }
+  },
+  "options": {
+    "step": {
+      "devices": {
+        "title": "WLED garlands",
+        "description": "Choose lights from the native WLED integration. For one segment choose the color light. A master light for multiple segments supports power, brightness and whole-controller presets; direct color control belongs to the segments.",
+        "data": {
+          "lights": "Garlands"
+        }
+      },
+      "scenes": {
+        "title": "{device} · {number}/{total}",
+        "description": "Choose a real WLED preset for each Yandex scene. A dash disables that scene. Numbers are the actual preset IDs, not the remote button order. Review name-based suggestions before saving.\n\n{entity}\n\n{details}",
+        "data": {
+          "alarm": "Alarm",
+          "alice": "Alice",
+          "candle": "Candle",
+          "dinner": "Dinner",
+          "fantasy": "Fantasy",
+          "garland": "Garland",
+          "jungle": "Jungle",
+          "movie": "Movie",
+          "neon": "Neon",
+          "night": "Night",
+          "ocean": "Ocean",
+          "party": "Party",
+          "reading": "Reading",
+          "rest": "Rest",
+          "romance": "Romance",
+          "siren": "Siren",
+          "sunrise": "Sunrise",
+          "sunset": "Sunset"
+        }
+      },
+      "finish": {
+        "title": "Save and export",
+        "description": "{summary}\n\nAutomatic export writes the fragment and reloads YaHA after saving. Then refresh devices in Yandex Smart Home. Select YAML as the device list source in YaHA.",
+        "data": {
+          "auto_export": "Update export automatically",
+          "connect_yaha": "Connect the export to YaHA through packages automatically"
+        }
+      },
+      "export": {
+        "title": "Export to YaHA",
+        "description": "{summary}\n\nSubmit to update the file and reload YaHA. Then refresh devices in Yandex Smart Home."
+      },
+      "init": {
+        "title": "WLED YaHA",
+        "menu_options": {
+          "devices": "Garlands and scenes",
+          "finish": "Export settings",
+          "export": "Export now"
+        }
+      }
+    },
+    "error": {
+      "invalid_light": "Choose an enabled native WLED light.",
+      "no_lights": "Choose at least one garland.",
+      "duplicate_preset": "Assign a preset to only one Yandex scene.",
+      "preset_missing": "The chosen preset was removed. Select another preset or disable this scene.",
+      "validation_failed": "Validation failed. See the details above; the previous export was preserved."
+    },
+    "abort": {
+      "already_configured": "Already configured. Manage all garlands in the integration options.",
+      "no_wled": "First add your garlands through Settings → Devices & services → Add integration → WLED.",
+      "device_missing": "The selected light was removed or disabled. Restart the wizard and select an available light.",
+      "not_loaded": "The integration is not loaded. Check its state in Devices & services.",
+      "exported": "Export saved. Refresh devices in Yandex Smart Home."
+    }
+  },
+  "entity": {
+    "button": {
+      "export": {
+        "name": "Export to YaHA"
+      }
+    },
+    "sensor": {
+      "status": {
+        "name": "Export status",
+        "state": {
+          "pending": "Pending",
+          "ready": "Ready",
+          "error": "Error",
+          "reload_required": "Reload YaHA"
+        }
+      }
+    }
+  }
+}

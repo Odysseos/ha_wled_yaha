@@ -1,0 +1,10 @@
+export_yaha_config:
+  name: Экспортировать настройки YaHA
+  description: Экспортирует все выбранные гирлянды. Подключение через packages и перечитывание YaHA выполняются согласно настройкам интеграции.
+  fields:
+    dry_run:
+      name: Предпросмотр
+      description: Возвращает YAML и диагностику, не изменяя файлы.
+      default: false
+      selector:
+        boolean:

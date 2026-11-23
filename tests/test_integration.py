@@ -8,6 +8,7 @@ import unittest
 from pathlib import Path
 from types import SimpleNamespace as N
 
+import voluptuous as vol
 from custom_components.wled_yaha import Runtime, build_preview
 from custom_components.wled_yaha.button import ExportButton
 from custom_components.wled_yaha.config_flow import (
@@ -149,6 +150,95 @@ class IntegrationTests(unittest.IsolatedAsyncioTestCase):
         await flow.async_step_devices({"lights": [self.light.entity_id]})
         result = await flow.async_step_scenes({"party": "id:7", "fantasy": "id:7"})
         self.assertEqual(result["errors"], {"base": "duplicate_preset"})
+
+    async def test_no_presets_skips_scenes_and_creates_working_light_export(self):
+        self.wled.runtime_data.data.presets.clear()
+        self.hass.states.async_set(
+            self.preset.entity_id, "unavailable", {"options": []}
+        )
+        flow = self.flow()
+        result = await flow.async_step_devices({"lights": [self.light.entity_id]})
+        self.assertEqual(result["step_id"], "finish")
+        result = await flow.async_step_finish(
+            {"auto_export": True, "connect_yaha": True}
+        )
+        self.assertEqual(result["type"], "create_entry")
+        self.assertTrue(
+            all(v is None for v in result["data"]["lights"][0]["scenes"].values())
+        )
+        self.hass.config_entries.async_update_entry(self.entry, data=result["data"])
+        export = await self.runtime.export()
+        self.assertFalse(export["errors"])
+        self.assertEqual(export["devices"][0]["scenes"], {})
+        self.assertIn(self.light.entity_id, export["yaml"])
+        self.assertNotIn("state_entity_id:", export["yaml"])
+
+    async def test_no_presets_with_disabled_selector_does_not_block_setup(self):
+        self.wled.runtime_data.data.presets.clear()
+        er.async_get(self.hass).async_update_entity(
+            self.preset.entity_id, disabled_by=er.RegistryEntryDisabler.USER
+        )
+        flow = self.flow()
+        result = await flow.async_step_devices({"lights": [self.light.entity_id]})
+        self.assertEqual(result["step_id"], "finish")
+        result = await flow.async_step_finish(
+            {"auto_export": True, "connect_yaha": True}
+        )
+        self.assertEqual(result["type"], "create_entry")
+
+    async def test_scene_fields_are_optional_and_skip_ignores_default_mappings(self):
+        flow = self.flow()
+        result = await flow.async_step_devices({"lights": [self.light.entity_id]})
+        schema = result["data_schema"]
+        self.assertFalse(any(isinstance(key, vol.Required) for key in schema.schema))
+        result = await flow.async_step_scenes(schema({"skip_scenes": True}))
+        self.assertEqual(result["step_id"], "finish")
+        self.assertTrue(
+            all(v is None for v in flow._draft["lights"][0]["scenes"].values())
+        )
+
+    async def test_no_scene_mapping_ignores_unavailable_preset_selector(self):
+        self.hass.config_entries.async_update_entry(
+            self.entry,
+            data={
+                **self.options,
+                "lights": [{**self.options["lights"][0], "scenes": {}}],
+            },
+        )
+        self.hass.states.async_set(
+            self.preset.entity_id, "unavailable", {"options": ["Радуга", "Свеча"]}
+        )
+        result = await self.runtime.export()
+        self.assertFalse(result["errors"])
+        self.assertEqual(result["devices"][0]["scenes"], {})
+
+    async def test_existing_scene_mapping_still_requires_available_selector(self):
+        self.hass.states.async_set(
+            self.preset.entity_id, "unavailable", {"options": ["Радуга", "Свеча"]}
+        )
+        with self.assertRaises(ServiceValidationError):
+            await self.runtime.export()
+
+    async def test_lost_presets_are_not_automatically_cleared_in_options(self):
+        self.wled.runtime_data.data.presets.clear()
+        self.hass.states.async_set(
+            self.preset.entity_id, "unavailable", {"options": []}
+        )
+        flow = WledYahaOptionsFlow()
+        flow.hass, flow.handler, flow.context, flow.flow_id = (
+            self.hass,
+            self.entry.entry_id,
+            {},
+            "options",
+        )
+        await flow.async_step_init()
+        result = await flow.async_step_devices({"lights": [self.light.entity_id]})
+        self.assertEqual(result["step_id"], "scenes")
+        result = await flow.async_step_scenes({"skip_scenes": True})
+        self.assertEqual(result["step_id"], "finish")
+        self.assertEqual(
+            config_options(self.entry)["lights"][0]["scenes"], {"candle": 1, "party": 7}
+        )
 
     async def test_options_draft_cancellation_does_not_modify_saved_mapping(self):
         flow = WledYahaOptionsFlow()

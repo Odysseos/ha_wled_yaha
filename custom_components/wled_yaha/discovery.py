@@ -11,7 +11,7 @@ from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 
-from .generator import DeviceSnapshot
+from .generator import ALIASES, DeviceSnapshot
 
 
 def collect_snapshots(
@@ -126,17 +126,29 @@ def collect_snapshots(
                     f"{light.entity_id}: устройство ещё не загружено или недоступно. "
                     "Файл не будет перезаписан, чтобы не потерять его режимы."
                 )
+            chosen_ids = {
+                **settings.get("preset_ids", {}),
+                **settings.get("devices", {})
+                .get(light.entity_id, {})
+                .get("preset_ids", {}),
+            }
+            scenes_disabled = all(
+                scene in chosen_ids and chosen_ids[scene] is None for scene in ALIASES
+            )
+            # An unavailable preset selector must not block ordinary light control
+            # when the user has explicitly left every scene disabled.
+            preset_problems = snapshot.warnings if scenes_disabled else snapshot.errors
             if len(presets) > 1:
-                snapshot.errors.append(
+                preset_problems.append(
                     f"{light.entity_id}: найдено несколько сущностей выбора пресетов."
                 )
             elif presets and preset_entry is None:
-                snapshot.errors.append(
+                preset_problems.append(
                     f"{light.entity_id}: включи отключённую сущность {presets[0].entity_id}."
                 )
             elif preset_entry is None:
                 if ids:
-                    snapshot.errors.append(
+                    preset_problems.append(
                         f"{light.entity_id}: пресеты есть, но не найдена их select-сущность."
                     )
                 else:
@@ -144,13 +156,13 @@ def collect_snapshots(
                         f"{light.entity_id}: нет select пресетов; будут только функции света."
                     )
             elif preset_state is None:
-                snapshot.errors.append(
+                preset_problems.append(
                     f"{preset_entry.entity_id}: сущность пока не загружена."
                 )
             elif preset_state.state == "unavailable" and (
                 options or raw_presets is None
             ):
-                snapshot.errors.append(
+                preset_problems.append(
                     f"{preset_entry.entity_id}: выбор пресетов недоступен."
                 )
             snapshots.append(snapshot)

@@ -1,3 +1,9 @@
+# 0.1.1
+
+- Allow setup without any WLED presets or Yandex scene mappings.
+- Make scene fields optional, add an explicit skip option, and skip the scene form when no presets exist.
+- Treat preset-selector problems as warnings when every scene is disabled; keep blocking errors for configured scenes.
+
 # 0.1.0
 
 Initial integration release.

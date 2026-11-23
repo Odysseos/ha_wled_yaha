@@ -44,6 +44,12 @@ class Wizard:
         self._draft = deepcopy(settings or {**DEFAULT_OPTIONS, "lights": []})
         self._queue = []
 
+    async def _next_device(self):
+        self._queue.pop(0)
+        if self._queue:
+            return await self.async_step_scenes()
+        return await self.async_step_finish()
+
     async def async_step_devices(self, user_input=None):
         if self._draft is None:
             self.begin()
@@ -105,6 +111,13 @@ class Wizard:
         if not snapshots:
             return self.async_abort(reason="device_missing")
         snapshot = snapshots[0]
+        if (
+            not snapshot.preset_ids
+            and not snapshot.options
+            and not any(v is not None for v in record.get("scenes", {}).values())
+        ):
+            record["scenes"] = {scene: None for scene in ALIASES}
+            return await self._next_device()
         errors = {}
         actual = [None] + list(sorted(snapshot.preset_ids))
         if not snapshot.preset_ids:
@@ -121,7 +134,10 @@ class Wizard:
         defaults = record.get("scenes", default_scenes(snapshot))
         if user_input is not None:
             selected = {
-                scene: from_choice(user_input.get(scene, "none")) for scene in ALIASES
+                scene: None
+                if user_input.get("skip_scenes", False)
+                else from_choice(user_input.get(scene, "none"))
+                for scene in ALIASES
             }
             assigned = [v for v in selected.values() if v is not None]
             if len(set(assigned)) != len(assigned):
@@ -130,10 +146,7 @@ class Wizard:
                 errors["base"] = "preset_missing"
             else:
                 record["scenes"] = selected
-                self._queue.pop(0)
-                if self._queue:
-                    return await self.async_step_scenes()
-                return await self.async_step_finish()
+                return await self._next_device()
             defaults = selected
         missing = [
             f"{ALIASES[k][0]}: {v}" for k, v in defaults.items() if v not in actual
@@ -143,14 +156,17 @@ class Wizard:
                 choices.append({"value": choice_key(v), "label": f"⚠ {v}"})
         schema = vol.Schema(
             {
-                vol.Required(
-                    scene, default=choice_key(defaults.get(scene))
-                ): selector.SelectSelector(
-                    selector.SelectSelectorConfig(
-                        options=choices, mode=selector.SelectSelectorMode.DROPDOWN
+                vol.Optional("skip_scenes", default=False): bool,
+                **{
+                    vol.Optional(
+                        scene, default=choice_key(defaults.get(scene))
+                    ): selector.SelectSelector(
+                        selector.SelectSelectorConfig(
+                            options=choices, mode=selector.SelectSelectorMode.DROPDOWN
+                        )
                     )
-                )
-                for scene in ALIASES
+                    for scene in ALIASES
+                },
             }
         )
         detail = "\n".join(discovery_errors + snapshot.errors)

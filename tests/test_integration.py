@@ -897,7 +897,7 @@ class IntegrationTests(unittest.IsolatedAsyncioTestCase):
         editor.websocket_subscribe(self.hass, connection, {"id": 2})
         await self.hass.async_block_till_done()
         self.assertEqual(
-            connection.send_result.call_args_list[0].args[1]["version"], "0.2.0"
+            connection.send_result.call_args_list[0].args[1]["version"], "0.2.1"
         )
         async_dispatcher_send(self.hass, "wled_yaha_updated")
         await self.hass.async_block_till_done()
@@ -936,3 +936,101 @@ class IntegrationTests(unittest.IsolatedAsyncioTestCase):
         data["settings"]["lights"][0]["enabled"] = False
         data = await save(self.hass, self.runtime, data["revision"], data["settings"])
         self.assertEqual(data["settings"]["lights"], [])
+
+    async def test_export_controls_do_not_create_an_area_assigned_device(self):
+        button, sensor = ExportButton(self.entry), ExportStatus(self.entry)
+        self.assertIsNone(button.device_info)
+        self.assertIsNone(sensor.device_info)
+        self.assertEqual(button.unique_id, self.entry.entry_id + "_export")
+        self.assertEqual(sensor.unique_id, self.entry.entry_id + "_status")
+        await button.async_press()
+        self.assertEqual(sensor.native_value, "ready")
+
+    async def test_legacy_bridge_cleanup_preserves_entities_ids_names_and_wled_areas(
+        self,
+    ):
+        from custom_components.wled_yaha import _remove_legacy_bridge_device
+
+        devices, entities = dr.async_get(self.hass), er.async_get(self.hass)
+        legacy = devices.async_get_or_create(
+            config_entry_id=self.entry.entry_id,
+            identifiers={("wled_yaha", self.entry.entry_id)},
+            name="WLED YaHA",
+        )
+        service_area = ar.async_get(self.hass).async_create("Прихожая")
+        devices.async_update_device(legacy.id, area_id=service_area.id)
+        controls = [
+            entities.async_get_or_create(
+                domain,
+                "wled_yaha",
+                self.entry.entry_id + suffix,
+                config_entry=self.entry,
+                device_id=legacy.id,
+                suggested_object_id="my_" + domain,
+            )
+            for domain, suffix in [("button", "_export"), ("sensor", "_status")]
+        ]
+        entities.async_update_entity(
+            controls[0].entity_id,
+            name="Мой экспорт",
+            disabled_by=er.RegistryEntryDisabler.USER,
+        )
+        original_controls = [
+            entities.async_get(entity.entity_id) for entity in controls
+        ]
+        native_before = devices.async_get(self.light.device_id)
+        _remove_legacy_bridge_device(self.hass, self.entry)
+        await self.hass.async_block_till_done()
+        self.assertIsNone(devices.async_get(legacy.id))
+        for original in original_controls:
+            current = entities.async_get(original.entity_id)
+            self.assertIsNotNone(current)
+            self.assertIsNone(current.device_id)
+            self.assertEqual(current.id, original.id)
+            self.assertEqual(current.unique_id, original.unique_id)
+            self.assertEqual(current.name, original.name)
+            self.assertEqual(current.disabled_by, original.disabled_by)
+        self.assertEqual(devices.async_get(self.light.device_id), native_before)
+        preview = build_preview(self.hass, self.options)
+        self.assertEqual(preview["device_count"], 1)
+        self.assertEqual(preview["errors"], [])
+        _remove_legacy_bridge_device(self.hass, self.entry)
+        self.assertEqual(devices.async_get(self.light.device_id), native_before)
+
+    async def test_device_cleanup_keeps_distinct_spaces_for_different_garlands(self):
+        from custom_components.wled_yaha import _remove_legacy_bridge_device
+        from custom_components.wled_yaha.editor import snapshot
+
+        devices, entities = dr.async_get(self.hass), er.async_get(self.hass)
+        room = ar.async_get(self.hass).async_create("Гостиная")
+        second_entry = config_entry("wled", unique_id="second_wled")
+        self.hass.config_entries._entries[second_entry.entry_id] = second_entry
+        second_entry.runtime_data = N(data=N(presets={}))
+        second_device = devices.async_get_or_create(
+            config_entry_id=second_entry.entry_id,
+            identifiers={("wled", "BB")},
+            name="Ёлка 2",
+        )
+        devices.async_update_device(second_device.id, area_id=room.id)
+        second_light = entities.async_get_or_create(
+            "light",
+            "wled",
+            "BB_0",
+            config_entry=second_entry,
+            device_id=second_device.id,
+            suggested_object_id="second_tree",
+        )
+        legacy = devices.async_get_or_create(
+            config_entry_id=self.entry.entry_id,
+            identifiers={("wled_yaha", self.entry.entry_id)},
+            name="WLED YaHA",
+        )
+        devices.async_update_device(legacy.id, area_id=room.id)
+        _remove_legacy_bridge_device(self.hass, self.entry)
+        rows = {
+            row["entity_id"]: row
+            for row in snapshot(self.hass, self.runtime)["devices"]
+        }
+        self.assertEqual(rows[self.light.entity_id]["room"], "Спальня")
+        self.assertEqual(rows[second_light.entity_id]["room"], "Гостиная")
+        self.assertIsNone(devices.async_get(legacy.id))

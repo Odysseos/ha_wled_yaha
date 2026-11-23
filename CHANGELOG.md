@@ -1,3 +1,9 @@
+# 0.2.1
+
+- Stop creating the synthetic YaHA preset bridge device. Export controls and diagnostics are standalone integration entities; setup no longer asks for an area for a bridge device spanning multiple garlands.
+- On update, detach the existing export entities before removing only the legacy bridge device. Preserve their registry IDs, entity IDs, custom names and disabled state.
+- Keep native WLED devices and each garland's own area unchanged. Add regression tests for distinct areas and legacy-device cleanup.
+
 # 0.2.0
 
 - Replace the sequential configuration wizard with an admin master-detail sidebar panel: all WLED lights on the left, scene mappings on the right, with live status, search and filters.

@@ -1,15 +1,12 @@
-# Validation — 0.2.0
+# Validation — 0.2.1
 
-Performed locally on 2026-11-23:
+Performed locally on 2026-11-23 with Python 3.14.10 and Home Assistant 2026.10.4:
 
-- Python 3.14.10 with **Home Assistant 2026.10.4**, imported before the test suite to use HA's voluptuous compatibility layer.
-- **82 Python tests**: real HA registries, config/options flows, preset discovery, export and YAML connection handling, unavailable devices, cached names, stable ordering, admin-only editor commands, subscription cleanup, atomic/stale saves, migration of legacy records, disabled lights and an empty selection.
-- **20 JavaScript tests** using Node.js 24 and jsdom: draft persistence and cancellation, profile copying, real target IDs, ambiguous names, conflicts and preset swaps, empty catalogs, filters, status/focus updates, locale initialization, HTML escaping, save failures and concurrent edits.
-- Python syntax, Ruff F/I/E9, JavaScript syntax and JSON files checked.
-- Archive integrity and flat root layout checked; no node_modules, Python caches or browser runtime files included.
+- **85 Python tests passed**, including new checks for standalone export entities, legacy-device cleanup preserving entity IDs/custom names/disabled state, and garlands in distinct HA areas.
+- Cleanup uses entry-scoped registry lookup. Export entities are detached before removing the old device, so HA does not delete their registry entries.
+- Native WLED devices, area assignments and saved scene mappings are unchanged.
+- Ruff F/I/E9, Python syntax, JSON and archive integrity checked.
+- The frontend JavaScript is byte-for-byte identical to 0.2.0. Its 20 JavaScript/DOM tests passed for 0.2.0; they were not repeated for this backend-only patch. The standalone demo subsequently verified desktop rendering, copying and profiles in a browser.
+- No live HA installation or physical device was modified. New checks use real HA registries with fixture data.
 
-`npm run test:browser` adds Playwright checks for desktop/mobile layout, horizontal overflow, dialogs, profiles/copying, saved drafts and stale revisions. It is included in GitHub Actions. **It was not run successfully in this workspace:** local Chromium cannot open its required socket (`Operation not permitted`), and the cloud browser does not permit local file URLs. DOM tests do not verify pixel layout or native dialog rendering.
-
-HACS and hassfest are configured in GitHub Actions. Their remote checks were not run locally. No live Home Assistant installation, physical WLED controller, YaHA connection or Yandex account was modified during validation. Network state and preset data in the tests are fixtures.
-
-HACS repository topics must be set in GitHub's About settings. The archive cannot change repository metadata.
+GitHub Actions continues to run Python, JavaScript/DOM, browser, HACS and hassfest checks. Remote checks were not run from this workspace. The archive has a flat root and excludes dependency folders and caches.

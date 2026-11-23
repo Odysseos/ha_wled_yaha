@@ -12,6 +12,8 @@ from homeassistant.const import EVENT_HOMEASSISTANT_STARTED, Platform
 from homeassistant.core import SupportsResponse, callback
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.event import async_call_later
 from homeassistant.helpers.service import async_register_admin_service
@@ -260,9 +262,52 @@ async def async_setup(hass, config):
     return True
 
 
+@callback
+def _remove_legacy_bridge_device(hass, entry):
+    """Keep export entities, but remove the old area-assigned service device."""
+    devices = dr.async_get(hass)
+    identity = (DOMAIN, entry.entry_id)
+    device = next(
+        (
+            item
+            for item in dr.async_entries_for_config_entry(devices, entry.entry_id)
+            if identity in item.identifiers
+        ),
+        None,
+    )
+    if device is None:
+        return
+    owner = getattr(device, "config_entry_id", None)
+    if owner is not None:
+        owned = owner == entry.entry_id
+    else:
+        owned = device.config_entries == {entry.entry_id}
+    if not owned or device.identifiers != {identity} or device.connections:
+        return
+    entities = er.async_get(hass)
+    unique_ids = {entry.entry_id + "_export", entry.entry_id + "_status"}
+    for entity in er.async_entries_for_device(
+        entities, device.id, include_disabled_entities=True
+    ):
+        if (
+            entity.config_entry_id == entry.entry_id
+            and entity.platform == DOMAIN
+            and entity.unique_id in unique_ids
+        ):
+            entities.async_update_entity(entity.entity_id, device_id=None)
+    # An entity's device must be cleared before removing it: HA otherwise deletes
+    # that entity registry entry, losing custom entity IDs and user settings.
+    if not er.async_entries_for_device(
+        entities, device.id, include_disabled_entities=True
+    ):
+        remove = getattr(devices, "async_remove_device", None) or devices.async_remove
+        remove(device.id)
+
+
 async def async_setup_entry(hass, entry):
     from . import frontend
 
+    _remove_legacy_bridge_device(hass, entry)
     runtime = entry.runtime_data = Runtime(hass, entry)
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     try:

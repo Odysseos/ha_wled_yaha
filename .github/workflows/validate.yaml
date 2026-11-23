@@ -15,6 +15,18 @@ jobs:
           python-version: '3.14'
       - run: pip install -r requirements-dev.txt
       - run: python -c 'import homeassistant; import unittest; unittest.main(module=None, argv=["unittest", "discover", "-s", "tests", "-v"])'
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm test
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:browser
   hacs:
     runs-on: ubuntu-latest
     steps:

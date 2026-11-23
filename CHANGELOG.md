@@ -1,3 +1,15 @@
+# 0.2.0
+
+- Replace the sequential configuration wizard with an admin master-detail sidebar panel: all WLED lights on the left, scene mappings on the right, with live status, search and filters.
+- Continue Entity ID Manager styling and its shared draft/Confirm/Cancel workflow, including changed-value chips and optimistic revision protection against concurrent edits.
+- Show known empty catalogs separately from catalogs that are not loaded. Keep unavailable lights selectable and exportable; preserve existing mappings and disabled lights' settings.
+- Add batch copying by unique preset name or explicit ID, fill-empty/replace policies, mismatch/conflict reports and reusable named profiles.
+- Save all devices, profiles and export options atomically without reloading the integration or closing the editor. Existing 0.1.x entries retain their mappings.
+- Support an explicitly empty selection to clear only this integration's owned export. Do not export a new entry before its first confirmation.
+- Keep natural ordering across discovery, editing and export. The legacy flow now skips every empty catalog and counts only visible scene pages.
+- Add admin-only WebSocket endpoints, subscription cleanup, revision checks, frontend draft/DOM tests and desktop/mobile browser checks in CI.
+- Include Entity ID Manager attribution in NOTICE and use GPL-3.0 for the combined 0.2.0 release; earlier release licenses are unchanged.
+
 # 0.1.3
 
 - Show each light's current on/off/unavailable/unknown/not-loaded state directly in the selection list, in Russian or English.

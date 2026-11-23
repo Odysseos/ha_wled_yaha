@@ -34,12 +34,12 @@ SERVICE = "export_yaha_config"
 SERVICE_SCHEMA = vol.Schema({vol.Optional("dry_run", default=False): cv.boolean})
 
 
-def build_preview(hass, options, previous_scenes=None):
+def build_preview(hass, options, previous_scenes=None, *, allow_empty=False):
     settings, snapshots, warnings, errors = snapshots_for_records(
         hass, options.get("lights", []), previous_scenes
     )
     payload, devices, extra_warnings, extra_errors = build_export(snapshots, settings)
-    if not snapshots:
+    if not snapshots and not allow_empty:
         errors.append("Не выбрана ни одна существующая сущность WLED.")
     return {
         "output_file": DEFAULT_OUTPUT,
@@ -97,7 +97,12 @@ class Runtime:
 
     @callback
     def schedule(self, *_):
-        if self.closed or not config_options(self.entry)["auto_export"]:
+        options = config_options(self.entry)
+        if (
+            self.closed
+            or not options["auto_export"]
+            or not options.get("configured", True)
+        ):
             return
         if self.cancel_pending:
             self.cancel_pending()
@@ -150,7 +155,12 @@ class Runtime:
                 )
             except (OSError, ValueError, yaml.YAMLError):
                 previous_scenes = {}
-            result = build_preview(self.hass, options, previous_scenes)
+            result = build_preview(
+                self.hass,
+                options,
+                previous_scenes,
+                allow_empty=options.get("configured", True),
+            )
             result.update(written=False, changed=False, connection_changed=False)
             try:
                 if options["connect_yaha"]:
@@ -220,6 +230,10 @@ class Runtime:
 
 
 async def async_setup(hass, config):
+    from . import editor
+
+    editor.register(hass)
+
     async def export(call):
         loaded = [
             e
@@ -247,8 +261,17 @@ async def async_setup(hass, config):
 
 
 async def async_setup_entry(hass, entry):
+    from . import frontend
+
     runtime = entry.runtime_data = Runtime(hass, entry)
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    try:
+        await frontend.async_register(hass)
+    except Exception:
+        runtime.close()
+        await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+        raise
+    entry.async_on_unload(lambda: frontend.unregister(hass))
     entry.async_on_unload(runtime.close)
     for event in (
         "state_changed",
@@ -268,7 +291,11 @@ async def async_setup_entry(hass, entry):
 
 
 async def _options_updated(hass, entry):
-    await hass.config_entries.async_reload(entry.entry_id)
+    runtime = getattr(entry, "runtime_data", None)
+    if runtime is not None and not runtime.closed:
+        runtime.status = "pending"
+        runtime.schedule()
+        async_dispatcher_send(hass, DOMAIN + "_updated")
 
 
 async def async_unload_entry(hass, entry):

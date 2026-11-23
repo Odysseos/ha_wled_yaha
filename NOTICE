@@ -1,0 +1,2 @@
+The WLED YaHA master-detail editor follows the visual styling and interaction patterns of Entity ID Manager by Odysseos (https://github.com/Odysseos/ha_entity_id_manager), licensed GPL-3.0.
+The combined integration is distributed under GPL-3.0-only. Earlier standalone WLED YaHA versions were distributed under MIT.

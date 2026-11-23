@@ -1,0 +1,13 @@
+{
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test tests/frontend/draft.test.mjs tests/frontend/dom.test.mjs",
+    "test:browser": "node tests/frontend/browser.mjs"
+  },
+  "devDependencies": {
+    "jsdom": "^27.0.1",
+    "playwright": "1.62.1",
+    "prettier": "3.6.2"
+  }
+}

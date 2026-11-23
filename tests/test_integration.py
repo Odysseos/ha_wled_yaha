@@ -21,7 +21,7 @@ from custom_components.wled_yaha.ordering import light_choices
 from custom_components.wled_yaha.sensor import ExportStatus
 from homeassistant.config_entries import ConfigEntries, ConfigEntry
 from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import ServiceValidationError
+from homeassistant.exceptions import ServiceValidationError, Unauthorized
 from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
@@ -518,7 +518,7 @@ class IntegrationTests(unittest.IsolatedAsyncioTestCase):
             {self.light.entity_id, other.entity_id},
         )
 
-    async def test_skipping_a_light_without_presets_keeps_remaining_scene_order(self):
+    async def test_skipping_empty_catalogs_counts_only_visible_scene_steps(self):
         self.wled.runtime_data.data.presets.clear()
         self.hass.states.async_set(self.light.entity_id, "unavailable")
         self.hass.states.async_set(
@@ -535,13 +535,112 @@ class IntegrationTests(unittest.IsolatedAsyncioTestCase):
             {"lights": [third.entity_id, self.light.entity_id, second.entity_id]}
         )
         self.assertEqual(result["description_placeholders"]["entity"], second.entity_id)
+        self.assertEqual(result["description_placeholders"]["number"], "1")
+        self.assertEqual(result["description_placeholders"]["total"], "2")
         result = await flow.async_step_scenes({"skip_scenes": True})
         self.assertEqual(result["description_placeholders"]["entity"], third.entity_id)
+        self.assertEqual(result["description_placeholders"]["number"], "2")
+        self.assertEqual(result["description_placeholders"]["total"], "2")
         await flow.async_step_scenes({"skip_scenes": True})
         result = await flow.async_step_finish(
             {"auto_export": True, "connect_yaha": True}
         )
         self.assertEqual(result["type"], "create_entry")
+
+    async def five_garlands(self, *, second_has_presets):
+        registry = er.async_get(self.hass)
+        registry.async_update_entity(self.light.entity_id, name="Гирлянда WLED1")
+        lights = [self.light]
+        for number in range(2, 6):
+            lights.append(
+                await self.add_garland(f"Гирлянда WLED{number}", f"wled{number}")
+            )
+        for number, light in enumerate(lights, 1):
+            source = self.hass.config_entries.async_get_entry(light.config_entry_id)
+            presets = (
+                {1: N(name="Aurora"), 2: N(name="Flow")}
+                if number == 2 and second_has_presets
+                else {}
+            )
+            source.runtime_data = N(data=N(presets=presets))
+            self.hass.states.async_set(light.entity_id, "unavailable")
+            for entity in registry.entities.values():
+                if (
+                    entity.config_entry_id == source.entry_id
+                    and entity.entity_id.startswith("select.")
+                ):
+                    self.hass.states.async_set(
+                        entity.entity_id, "unavailable", {"options": []}
+                    )
+        return lights
+
+    async def test_five_offline_lights_only_wled2_has_presets_first_dialog_is_one_of_one(
+        self,
+    ):
+        lights = await self.five_garlands(second_has_presets=True)
+        flow = self.flow()
+        form = await flow.async_step_devices()
+        picker = next(iter(form["data_schema"].schema.values()))
+        shown = [option["value"] for option in picker.config["options"]]
+        self.assertEqual(shown, [light.entity_id for light in lights])
+        result = await flow.async_step_devices({"lights": list(reversed(shown))})
+        self.assertEqual(
+            result["description_placeholders"]["entity"], lights[1].entity_id
+        )
+        self.assertEqual(result["description_placeholders"]["number"], "1")
+        self.assertEqual(result["description_placeholders"]["total"], "1")
+        self.assertEqual(flow._auto_skipped, [0, 2, 3, 4])
+        result = await flow.async_step_scenes({})
+        self.assertEqual(result["step_id"], "finish")
+        result = await flow.async_step_finish(
+            {"auto_export": True, "connect_yaha": True}
+        )
+        self.assertEqual(result["type"], "create_entry")
+        self.hass.config_entries.async_update_entry(self.entry, data=result["data"])
+        export = await self.runtime.export()
+        self.assertEqual(export["device_count"], 5)
+        self.assertEqual([item["light"] for item in export["devices"]], shown)
+
+    async def test_all_five_empty_catalogs_skip_every_scene_dialog_but_export_all_lights(
+        self,
+    ):
+        lights = await self.five_garlands(second_has_presets=False)
+        flow = self.flow()
+        result = await flow.async_step_devices(
+            {"lights": [light.entity_id for light in lights]}
+        )
+        self.assertEqual(result["step_id"], "finish")
+        self.assertEqual(flow._scene_total, 0)
+        self.assertEqual(flow._auto_skipped, [0, 1, 2, 3, 4])
+        result = await flow.async_step_finish(
+            {"auto_export": True, "connect_yaha": True}
+        )
+        self.assertEqual(result["type"], "create_entry")
+        self.hass.config_entries.async_update_entry(self.entry, data=result["data"])
+        export = await self.runtime.export()
+        self.assertEqual(export["device_count"], 5)
+
+    async def test_catalog_lost_between_dialogs_skips_that_light_without_counter_gap(
+        self,
+    ):
+        second = await self.add_garland("Гирлянда 2", "second")
+        third = await self.add_garland("Гирлянда 3", "third")
+        flow = self.flow()
+        result = await flow.async_step_devices(
+            {"lights": [second.entity_id, third.entity_id]}
+        )
+        self.assertEqual(result["description_placeholders"]["number"], "1")
+        source = self.hass.config_entries.async_get_entry(third.config_entry_id)
+        source.runtime_data.data.presets.clear()
+        for entity in er.async_get(self.hass).entities.values():
+            if entity.config_entry_id == third.config_entry_id:
+                self.hass.states.async_set(
+                    entity.entity_id, "unavailable", {"options": []}
+                )
+        result = await flow.async_step_scenes({"skip_scenes": True})
+        self.assertEqual(result["step_id"], "finish")
+        self.assertEqual(flow._scene_total, 1)
+        self.assertEqual(flow._scene_completed, 1)
 
     async def test_old_export_restores_scene_names_when_both_native_entities_are_offline(
         self,
@@ -631,3 +730,209 @@ class IntegrationTests(unittest.IsolatedAsyncioTestCase):
         preview = build_preview(self.hass, options)
         self.assertEqual(preview["devices"], [])
         self.assertTrue(preview["errors"])
+
+    async def test_editor_catalog_includes_offline_and_empty_presets(self):
+        from custom_components.wled_yaha.editor import snapshot
+
+        self.hass.states.async_set(self.light.entity_id, "unavailable")
+        self.wled.runtime_data.data.presets = {}
+        self.hass.states.async_set(self.preset.entity_id, "unknown", {"options": []})
+        data = snapshot(self.hass, self.runtime)
+        row = data["devices"][0]
+        self.assertEqual(row["state"], "unavailable")
+        self.assertEqual(row["presets"], [])
+        self.assertTrue(row["catalog_known"])
+        self.wled.runtime_data = None
+        self.assertFalse(
+            snapshot(self.hass, self.runtime)["devices"][0]["catalog_known"]
+        )
+        self.assertEqual(len(data["scenes"]), 18)
+
+    async def test_editor_atomic_save_preserves_legacy_mappings_and_profiles(self):
+        from custom_components.wled_yaha.editor import save, snapshot
+
+        data = snapshot(self.hass, self.runtime)
+        raw = data["settings"]
+        raw["profiles"] = [
+            {
+                "id": "p1",
+                "name": "Дом",
+                "scenes": {"candle": {"preset_id": 1, "preset_name": "Свеча"}},
+            }
+        ]
+        result = await save(self.hass, self.runtime, data["revision"], raw)
+        record = result["settings"]["lights"][0]
+        self.assertTrue(record["enabled"])
+        self.assertEqual(record["scenes"]["party"], 7)
+        self.assertEqual(record["scene_names"]["candle"], "Свеча")
+        self.assertEqual(result["settings"]["profiles"], raw["profiles"])
+        self.assertNotEqual(data["revision"], result["revision"])
+        self.assertFalse((self.path / DEFAULT_OUTPUT).exists())
+
+    async def test_editor_stale_and_invalid_save_leave_all_settings_unchanged(self):
+        from copy import deepcopy
+
+        from custom_components.wled_yaha.editor import EditError, save, snapshot
+
+        data = snapshot(self.hass, self.runtime)
+        raw = deepcopy(data["settings"])
+        raw["lights"][0]["scenes"]["party"] = 1
+        with self.assertRaises(EditError) as err:
+            await save(self.hass, self.runtime, data["revision"], raw)
+        self.assertEqual(err.exception.code, "duplicate_preset")
+        self.assertEqual(
+            snapshot(self.hass, self.runtime)["settings"], data["settings"]
+        )
+        with self.assertRaises(EditError) as err:
+            await save(self.hass, self.runtime, "old-revision", data["settings"])
+        self.assertEqual(err.exception.code, "stale_editor")
+        self.assertEqual(
+            snapshot(self.hass, self.runtime)["settings"], data["settings"]
+        )
+
+    async def test_editor_disabled_light_keeps_its_mapping_but_clears_owned_export(
+        self,
+    ):
+        from custom_components.wled_yaha.editor import save, snapshot
+
+        await self.runtime.export()
+        data = snapshot(self.hass, self.runtime)
+        data["settings"]["lights"][0]["enabled"] = False
+        await save(self.hass, self.runtime, data["revision"], data["settings"])
+        result = await self.runtime.export()
+        self.assertEqual(result["device_count"], 0)
+        self.assertEqual(result["errors"], [])
+        self.assertNotIn(self.light.entity_id, (self.path / DEFAULT_OUTPUT).read_text())
+        saved = snapshot(self.hass, self.runtime)["settings"]["lights"][0]
+        self.assertEqual(saved["scenes"]["party"], 7)
+        self.assertFalse(saved["enabled"])
+        self.assertEqual(
+            len(snapshot(self.hass, self.runtime)["devices"][0]["presets"]), 2
+        )
+
+    async def test_editor_caches_offline_assignments_and_exports_light(self):
+        from custom_components.wled_yaha.editor import save, snapshot
+
+        data = snapshot(self.hass, self.runtime)
+        await save(self.hass, self.runtime, data["revision"], data["settings"])
+        self.wled.runtime_data = None
+        self.hass.states.async_set(self.light.entity_id, "unavailable")
+        self.hass.states.async_set(self.preset.entity_id, "unavailable")
+        data = snapshot(self.hass, self.runtime)
+        data["settings"]["auto_export"] = False
+        await save(self.hass, self.runtime, data["revision"], data["settings"])
+        result = await self.runtime.export(dry_run=True)
+        self.assertEqual(result["device_count"], 1)
+        self.assertEqual(result["devices"][0]["scenes"]["party"], "Радуга")
+        self.assertFalse(result["errors"])
+
+    async def test_editor_rejects_foreign_entities_and_duplicate_profiles(self):
+        from custom_components.wled_yaha.editor import (
+            EditError,
+            settings,
+            validate_settings,
+        )
+
+        raw = settings(self.entry)
+        raw["lights"][0]["registry_id"] = "does-not-exist"
+        with self.assertRaises(EditError):
+            validate_settings(self.hass, self.entry, raw)
+        raw = settings(self.entry)
+        raw["profiles"] = [
+            {"id": "1", "name": "Дом", "scenes": {}},
+            {"id": "2", "name": "дом", "scenes": {}},
+        ]
+        with self.assertRaises(EditError) as err:
+            validate_settings(self.hass, self.entry, raw)
+        self.assertEqual(err.exception.code, "duplicate_profile")
+        self.assertNotIn("profiles", self.entry.options)
+
+    async def test_editor_all_websocket_commands_require_admin(self):
+        from unittest.mock import Mock
+
+        from custom_components.wled_yaha import editor
+
+        connection = Mock(user=N(is_admin=False))
+        for handler in (
+            editor.websocket_get,
+            editor.websocket_save,
+            editor.websocket_preview,
+            editor.websocket_export,
+            editor.websocket_subscribe,
+        ):
+            with self.assertRaises(Unauthorized):
+                handler(self.hass, connection, {"id": 42})
+        self.assertFalse((self.path / DEFAULT_OUTPUT).exists())
+
+    async def test_editor_options_update_does_not_reload_or_close_panel(self):
+        from custom_components.wled_yaha import _options_updated
+
+        self.options["auto_export"] = False
+        await _options_updated(self.hass, self.entry)
+        self.assertFalse(self.runtime.closed)
+        self.assertIsNone(self.runtime.cancel_pending)
+        self.assertEqual(self.runtime.status, "pending")
+
+    async def test_new_entry_opens_panel_without_exporting_before_confirmation(self):
+        self.hass.config_entries._entries.pop(self.entry.entry_id)
+        result = await self.flow().async_step_user({})
+        self.assertEqual(result["type"], "create_entry")
+        self.assertFalse(result["data"]["configured"])
+        self.assertEqual(result["data"]["lights"], [])
+        entry = config_entry("wled_yaha", result["data"])
+        runtime = Runtime(self.hass, entry)
+        runtime.schedule()
+        self.assertIsNone(runtime.cancel_pending)
+        runtime.close()
+        self.assertFalse((self.path / DEFAULT_OUTPUT).exists())
+
+    async def test_editor_admin_subscription_refreshes_and_can_be_unsubscribed(self):
+        from unittest.mock import Mock
+
+        from custom_components.wled_yaha import editor
+        from homeassistant.helpers.dispatcher import async_dispatcher_send
+
+        connection = Mock(user=N(is_admin=True), subscriptions={})
+        editor.websocket_get(self.hass, connection, {"id": 1})
+        editor.websocket_subscribe(self.hass, connection, {"id": 2})
+        await self.hass.async_block_till_done()
+        self.assertEqual(
+            connection.send_result.call_args_list[0].args[1]["version"], "0.2.0"
+        )
+        async_dispatcher_send(self.hass, "wled_yaha_updated")
+        await self.hass.async_block_till_done()
+        self.assertEqual(connection.send_event.call_args.args[0], 2)
+        self.assertEqual(connection.send_event.call_count, 1)
+        connection.subscriptions.pop(2)()
+        async_dispatcher_send(self.hass, "wled_yaha_updated")
+        await self.hass.async_block_till_done()
+        self.assertEqual(connection.send_event.call_count, 1)
+
+    async def test_editor_rejects_same_resolved_preset_by_id_and_name(self):
+        from custom_components.wled_yaha.editor import (
+            EditError,
+            settings,
+            validate_settings,
+        )
+
+        raw = settings(self.entry)
+        raw["lights"][0]["scenes"]["alarm"] = "Свеча"
+        with self.assertRaises(EditError) as err:
+            validate_settings(self.hass, self.entry, raw)
+        self.assertEqual(err.exception.code, "duplicate_preset")
+
+    async def test_editor_missing_legacy_row_can_be_kept_or_explicitly_removed(self):
+        from custom_components.wled_yaha.editor import save, snapshot
+
+        er.async_get(self.hass).async_remove(self.light.entity_id)
+        data = snapshot(self.hass, self.runtime)
+        self.assertTrue(data["devices"][0]["missing"])
+        data["settings"]["lights"][0].update(enabled=True, scene_names={})
+        # Normalization in the frontend expands all optional scene keys.
+        for scene in data["scenes"]:
+            data["settings"]["lights"][0]["scenes"].setdefault(scene["id"], None)
+        data = await save(self.hass, self.runtime, data["revision"], data["settings"])
+        self.assertEqual(len(data["settings"]["lights"]), 1)
+        data["settings"]["lights"][0]["enabled"] = False
+        data = await save(self.hass, self.runtime, data["revision"], data["settings"])
+        self.assertEqual(data["settings"]["lights"], [])

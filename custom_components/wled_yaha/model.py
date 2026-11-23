@@ -24,6 +24,8 @@ def settings_for_records(hass, records):
     settings = {"include_entities": [], "devices": {}}
     missing = []
     for record in records:
+        if not record.get("enabled", True):
+            continue
         entity = resolve_entity(hass, record)
         if (
             entity is None

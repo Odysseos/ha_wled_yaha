@@ -128,6 +128,7 @@ def collect_snapshots(
                 preset_ids=ids,
                 online=bool(state and state.state not in {"unknown", "unavailable"}),
                 preset_online=preset_online,
+                catalog_known=isinstance(raw_presets, dict),
             )
             if state is None or state.state in {"unknown", "unavailable"}:
                 snapshot.warnings.append(

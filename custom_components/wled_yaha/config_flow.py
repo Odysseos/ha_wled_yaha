@@ -46,12 +46,42 @@ class Wizard:
         self._queue = []
         self._visible_order = None
         self._choice_labels = {}
+        self._scene_total = 0
+        self._scene_completed = 0
+        self._auto_skipped = []
 
-    async def _next_device(self):
-        self._queue.pop(0)
+    async def _next_device(self, *, skipped=False):
+        index = self._queue.pop(0)
+        if skipped:
+            self._scene_total -= 1
+            self._auto_skipped.append(index)
+        else:
+            self._scene_completed += 1
         if self._queue:
             return await self.async_step_scenes()
         return await self.async_step_finish()
+
+    @staticmethod
+    def _has_scenes_to_configure(record, snapshot):
+        return bool(
+            snapshot.preset_ids
+            or snapshot.options
+            or any(value is not None for value in record.get("scenes", {}).values())
+        )
+
+    def _prepare_scene_queue(self):
+        self._queue = []
+        self._auto_skipped = []
+        self._scene_completed = 0
+        for index, record in enumerate(self._draft["lights"]):
+            _, snapshots, _, _ = snapshots_for_records(self.hass, [record])
+            if snapshots and not self._has_scenes_to_configure(record, snapshots[0]):
+                record["scenes"] = {scene: None for scene in ALIASES}
+                record["scene_names"] = {}
+                self._auto_skipped.append(index)
+            else:
+                self._queue.append(index)
+        self._scene_total = len(self._queue)
 
     async def async_step_devices(self, user_input=None):
         if self._draft is None:
@@ -96,7 +126,9 @@ class Wizard:
                 errors["base"] = "no_lights"
             if not errors:
                 self._draft["lights"] = records
-                self._queue = list(range(len(records)))
+                self._prepare_scene_queue()
+                if not self._queue:
+                    return await self.async_step_finish()
                 return await self.async_step_scenes()
         selected = [
             e.entity_id
@@ -140,13 +172,10 @@ class Wizard:
         if not snapshots:
             return self.async_abort(reason="device_missing")
         snapshot = snapshots[0]
-        if (
-            not snapshot.preset_ids
-            and not snapshot.options
-            and not any(v is not None for v in record.get("scenes", {}).values())
-        ):
+        if user_input is None and not self._has_scenes_to_configure(record, snapshot):
             record["scenes"] = {scene: None for scene in ALIASES}
-            return await self._next_device()
+            record["scene_names"] = {}
+            return await self._next_device(skipped=True)
         errors = {}
         actual = [None] + list(sorted(snapshot.preset_ids))
         if not snapshot.preset_ids:
@@ -215,6 +244,8 @@ class Wizard:
             }
         )
         detail = "\n".join(discovery_errors + snapshot.errors + snapshot.warnings)
+        if self._auto_skipped:
+            detail += f"\n\nГирлянд без каталога пресетов: {len(self._auto_skipped)}. Их окна сцен пропущены; все они будут включены в YaHA без сцен. Счётчик в заголовке относится только к окнам настройки сцен."
         if missing:
             detail += "\nОтсутствуют пресеты: " + ", ".join(missing)
         return self.async_show_form(
@@ -226,8 +257,8 @@ class Wizard:
                     snapshot.light, snapshot.name
                 ).removesuffix(" · " + snapshot.light),
                 "entity": snapshot.light,
-                "number": str(index + 1),
-                "total": str(len(self._draft["lights"])),
+                "number": str(self._scene_completed + 1),
+                "total": str(self._scene_total),
                 "details": detail or "—",
             },
         )
@@ -296,14 +327,17 @@ class WledYahaConfigFlow(Wizard, config_entries.ConfigFlow, domain=DOMAIN):
     async def async_step_user(self, user_input=None):
         await self.async_set_unique_id(DOMAIN)
         self._abort_if_unique_id_configured()
-        if not any(
-            e.platform == "wled"
-            and e.entity_id.startswith("light.")
-            and e.disabled_by is None
-            for e in er.async_get(self.hass).entities.values()
-        ):
-            return self.async_abort(reason="no_wled")
-        return await self.async_step_devices(user_input)
+        if user_input is not None:
+            return self.async_create_entry(
+                title="WLED YaHA",
+                data={
+                    **DEFAULT_OPTIONS,
+                    "lights": [],
+                    "profiles": [],
+                    "configured": False,
+                },
+            )
+        return self.async_show_form(step_id="user", data_schema=vol.Schema({}))
 
     @staticmethod
     @callback
@@ -315,9 +349,12 @@ class WledYahaOptionsFlow(Wizard, config_entries.OptionsFlow):
     async def async_step_init(self, user_input=None):
         if self._draft is None:
             self.begin(config_options(self.config_entry))
-        return self.async_show_menu(
-            step_id="init", menu_options=["devices", "finish", "export"]
-        )
+        return self.async_show_menu(step_id="init", menu_options=["panel", "export"])
+
+    async def async_step_panel(self, user_input=None):
+        if user_input is not None:
+            return self.async_abort(reason="configure_in_panel")
+        return self.async_show_form(step_id="panel", data_schema=vol.Schema({}))
 
     async def async_step_export(self, user_input=None):
         runtime = getattr(self.config_entry, "runtime_data", None)

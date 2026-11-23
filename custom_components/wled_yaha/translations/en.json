@@ -41,6 +41,10 @@
           "auto_export": "Update export automatically",
           "connect_yaha": "Connect the export to YaHA through packages automatically"
         }
+      },
+      "user": {
+        "title": "WLED YaHA",
+        "description": "Adds WLED YaHA to the Home Assistant sidebar. Manage all garlands, availability, scenes and profiles on one screen. The export is unchanged until you confirm settings in the editor."
       }
     },
     "error": {
@@ -51,11 +55,15 @@
       "validation_failed": "Validation failed. See the details above; the previous export was preserved."
     },
     "abort": {
-      "already_configured": "Already configured. Manage all garlands in the integration options.",
+      "already_configured": "Already configured. Open WLED YaHA in the sidebar.",
       "no_wled": "First add your garlands through Settings → Devices & services → Add integration → WLED.",
       "device_missing": "The selected light was removed or disabled. Restart the wizard and select an available light.",
       "not_loaded": "The integration is not loaded. Check its state in Devices & services.",
-      "exported": "Export saved. Refresh devices in Yandex Smart Home."
+      "exported": "Export saved. Refresh devices in Yandex Smart Home.",
+      "configure_in_panel": "Settings are available in WLED YaHA in the sidebar."
+    },
+    "create_entry": {
+      "default": "Open [WLED YaHA](/wled-yaha) in the sidebar. Select garlands, optionally assign scenes, and choose Confirm."
     }
   },
   "options": {
@@ -107,10 +115,13 @@
       "init": {
         "title": "WLED YaHA",
         "menu_options": {
-          "devices": "Garlands and scenes",
-          "finish": "Export settings",
+          "panel": "Open garland and scene editor",
           "export": "Export now"
         }
+      },
+      "panel": {
+        "title": "WLED YaHA editor",
+        "description": "Open [WLED YaHA](/wled-yaha) in the sidebar: garlands on the left, scene mappings on the right. Copying, profiles and export settings share one Confirm action."
       }
     },
     "error": {
@@ -121,11 +132,12 @@
       "validation_failed": "Validation failed. See the details above; the previous export was preserved."
     },
     "abort": {
-      "already_configured": "Already configured. Manage all garlands in the integration options.",
+      "already_configured": "Already configured. Open WLED YaHA in the sidebar.",
       "no_wled": "First add your garlands through Settings → Devices & services → Add integration → WLED.",
       "device_missing": "The selected light was removed or disabled. Restart the wizard and select an available light.",
       "not_loaded": "The integration is not loaded. Check its state in Devices & services.",
-      "exported": "Export saved. Refresh devices in Yandex Smart Home."
+      "exported": "Export saved. Refresh devices in Yandex Smart Home.",
+      "configure_in_panel": "Settings are available in WLED YaHA in the sidebar."
     }
   },
   "entity": {

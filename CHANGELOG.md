@@ -1,3 +1,8 @@
+# 0.1.3
+
+- Show each light's current on/off/unavailable/unknown/not-loaded state directly in the selection list, in Russian or English.
+- Refresh displayed statuses when opening the list; keep state labels separate from sorting, entity identifiers and scene-step titles.
+
 # 0.1.2
 
 - Export selected WLED lights even when the native light or preset selector is currently unavailable.

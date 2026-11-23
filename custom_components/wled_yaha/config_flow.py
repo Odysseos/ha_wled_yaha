@@ -60,7 +60,8 @@ class Wizard:
         if self._visible_order is None:
             self._visible_order = [choice["value"] for choice in choices]
             self._choice_labels = {
-                choice["value"]: choice["label"] for choice in choices
+                choice["value"]: choice["label"].rsplit(" · ", 1)[0]
+                for choice in choices
             }
         errors = {}
         if user_input is not None:
@@ -112,7 +113,9 @@ class Wizard:
         # HA's entity picker sorts independently and submits selection order. An
         # explicit unsorted option list gives the UI and wizard one shared order.
         self._visible_order = [choice["value"] for choice in choices]
-        self._choice_labels = {choice["value"]: choice["label"] for choice in choices}
+        self._choice_labels = {
+            choice["value"]: choice["label"].rsplit(" · ", 1)[0] for choice in choices
+        }
         return self.async_show_form(
             step_id="devices",
             errors=errors,

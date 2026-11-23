@@ -1,7 +1,6 @@
 Validation: 2026-11-23 (Europe/Moscow)
-WLED YaHA 0.1.2; Home Assistant 2026.10.4; Python 3.14.10.
-64 tests passed.
-Coverage includes explicit picker/scene/summary ordering, natural numeric order, duplicate labels, rename while selecting, skipped empty-catalog devices, first offline export, mixed online/offline devices, cached scene recovery and later catalog recovery.
+WLED YaHA 0.1.3; Home Assistant 2026.10.4; Python 3.14.10.
+67 tests passed. Status labels verified for on, off, unavailable, unknown and missing states; Russian/English labels, reopening refresh, unchanged identifiers/order, offline selection and scene titles without stale status text. Existing ordering, export and offline-scene regression coverage retained.
 WLED network data and YaHA reload handler supplied by fixtures; no physical device or Yandex account was contacted.
 ruff check --isolated --select F,I,E9: passed.
 
@@ -62,17 +61,20 @@ test_old_export_restores_scene_names_when_both_native_entities_are_offline (test
 test_one_offline_device_does_not_block_other_selected_devices (test_integration.IntegrationTests.test_one_offline_device_does_not_block_other_selected_devices) ... ok
 test_options_draft_cancellation_does_not_modify_saved_mapping (test_integration.IntegrationTests.test_options_draft_cancellation_does_not_modify_saved_mapping) ... ok
 test_picker_and_all_scene_steps_share_natural_name_order (test_integration.IntegrationTests.test_picker_and_all_scene_steps_share_natural_name_order) ... ok
+test_picker_shows_current_power_and_availability_status_in_russian (test_integration.IntegrationTests.test_picker_shows_current_power_and_availability_status_in_russian) ... ok
 test_preview_never_writes_files (test_integration.IntegrationTests.test_preview_never_writes_files) ... ok
 test_renamed_entities_follow_stable_registry_identity (test_integration.IntegrationTests.test_renamed_entities_follow_stable_registry_identity) ... ok
 test_renamed_preset_keeps_mapping_by_id (test_integration.IntegrationTests.test_renamed_preset_keeps_mapping_by_id) ... ok
+test_reopening_picker_refreshes_status_and_scene_title_does_not_cache_status (test_integration.IntegrationTests.test_reopening_picker_refreshes_status_and_scene_title_does_not_cache_status) ... ok
 test_same_names_sort_by_room_then_entity_id_and_remain_identifiable (test_integration.IntegrationTests.test_same_names_sort_by_room_then_entity_id_and_remain_identifiable) ... ok
 test_scene_fields_are_optional_and_skip_ignores_default_mappings (test_integration.IntegrationTests.test_scene_fields_are_optional_and_skip_ignores_default_mappings) ... ok
 test_scene_order_stays_as_displayed_if_a_device_is_renamed_during_selection (test_integration.IntegrationTests.test_scene_order_stays_as_displayed_if_a_device_is_renamed_during_selection) ... ok
 test_skipping_a_light_without_presets_keeps_remaining_scene_order (test_integration.IntegrationTests.test_skipping_a_light_without_presets_keeps_remaining_scene_order) ... ok
+test_status_changes_do_not_reorder_the_picker_or_change_identifiers (test_integration.IntegrationTests.test_status_changes_do_not_reorder_the_picker_or_change_identifiers) ... ok
 test_wizard_saves_names_and_settings_after_devices_go_offline (test_integration.IntegrationTests.test_wizard_saves_names_and_settings_after_devices_go_offline) ... ok
 test_wizard_selects_real_entities_and_actual_preset_ids (test_integration.IntegrationTests.test_wizard_selects_real_entities_and_actual_preset_ids) ... ok
 
 ----------------------------------------------------------------------
-Ran 64 tests in 0.287s
+Ran 67 tests in 0.287s
 
 OK

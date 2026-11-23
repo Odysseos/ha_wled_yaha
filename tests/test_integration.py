@@ -17,6 +17,7 @@ from custom_components.wled_yaha.config_flow import (
 )
 from custom_components.wled_yaha.generator import DEFAULT_OUTPUT
 from custom_components.wled_yaha.model import config_options
+from custom_components.wled_yaha.ordering import light_choices
 from custom_components.wled_yaha.sensor import ExportStatus
 from homeassistant.config_entries import ConfigEntries, ConfigEntry
 from homeassistant.core import HomeAssistant
@@ -399,6 +400,65 @@ class IntegrationTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertTrue(all(o["value"] in o["label"] for o in options))
         self.assertIn("Детская", options[0]["label"])
+
+    async def test_picker_shows_current_power_and_availability_status_in_russian(self):
+        self.hass.config.language = "ru"
+        on = await self.add_garland("Гирлянда 1", "on")
+        off = await self.add_garland("Гирлянда 2", "off")
+        offline = await self.add_garland("Гирлянда 3", "offline")
+        unknown = await self.add_garland("Гирлянда 4", "unknown")
+        unloaded = await self.add_garland("Гирлянда 5", "unloaded")
+        self.hass.states.async_set(off.entity_id, "off")
+        self.hass.states.async_set(offline.entity_id, "unavailable")
+        self.hass.states.async_set(unknown.entity_id, "unknown")
+        self.hass.states.async_remove(unloaded.entity_id)
+        form = await self.flow().async_step_devices()
+        picker = next(iter(form["data_schema"].schema.values()))
+        labels = {
+            option["value"]: option["label"] for option in picker.config["options"]
+        }
+        for entity, status in [
+            (on, "🟢 Включена"),
+            (off, "⚪ Выключена"),
+            (offline, "🔴 Недоступна"),
+            (unknown, "🟡 Состояние неизвестно"),
+            (unloaded, "🟡 Ещё не загружена"),
+        ]:
+            self.assertTrue(
+                labels[entity.entity_id].endswith(status), labels[entity.entity_id]
+            )
+        self.assertIn(offline.entity_id, picker([offline.entity_id]))
+
+    async def test_status_changes_do_not_reorder_the_picker_or_change_identifiers(self):
+        first = await self.add_garland("Гирлянда 2", "first")
+        second = await self.add_garland("Гирлянда 10", "second")
+        before = light_choices(self.hass)
+        self.hass.states.async_set(first.entity_id, "unavailable")
+        self.hass.states.async_set(second.entity_id, "off")
+        after = light_choices(self.hass)
+        self.assertEqual([o["value"] for o in before], [o["value"] for o in after])
+        self.assertNotEqual(
+            next(o["label"] for o in before if o["value"] == first.entity_id),
+            next(o["label"] for o in after if o["value"] == first.entity_id),
+        )
+
+    async def test_reopening_picker_refreshes_status_and_scene_title_does_not_cache_status(
+        self,
+    ):
+        self.hass.config.language = "en"
+        flow = self.flow()
+        await flow.async_step_devices()
+        self.hass.states.async_set(self.light.entity_id, "unavailable")
+        result = await flow.async_step_devices({"lights": [self.light.entity_id]})
+        self.assertNotIn("🟢", result["description_placeholders"]["device"])
+        reopened = await self.flow().async_step_devices()
+        picker = next(iter(reopened["data_schema"].schema.values()))
+        label = next(
+            o["label"]
+            for o in picker.config["options"]
+            if o["value"] == self.light.entity_id
+        )
+        self.assertTrue(label.endswith("🔴 Unavailable"))
 
     async def test_scene_order_stays_as_displayed_if_a_device_is_renamed_during_selection(
         self,

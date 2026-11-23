@@ -4,7 +4,7 @@
     "step": {
       "devices": {
         "title": "WLED garlands",
-        "description": "Choose lights from the native WLED integration. For one segment choose the color light. A master light for multiple segments supports power, brightness and whole-controller presets; direct color control belongs to the segments.\n\nLights are sorted naturally by name: 2 before 10, then room and entity ID for matching names. Scene setup follows the same order. Currently unavailable lights can also be selected and exported.",
+        "description": "Choose lights from the native WLED integration. For one segment choose the color light. A master light for multiple segments supports power, brightness and whole-controller presets; direct color control belongs to the segments.\n\nLights are sorted naturally by name: 2 before 10, then room and entity ID for matching names. Scene setup follows the same order. Currently unavailable lights can also be selected and exported.\n\nEach light shows its state at the time this list is opened: on, off, unavailable, unknown or not loaded yet.",
         "data": {
           "lights": "Garlands"
         }
@@ -62,7 +62,7 @@
     "step": {
       "devices": {
         "title": "WLED garlands",
-        "description": "Choose lights from the native WLED integration. For one segment choose the color light. A master light for multiple segments supports power, brightness and whole-controller presets; direct color control belongs to the segments.\n\nLights are sorted naturally by name: 2 before 10, then room and entity ID for matching names. Scene setup follows the same order. Currently unavailable lights can also be selected and exported.",
+        "description": "Choose lights from the native WLED integration. For one segment choose the color light. A master light for multiple segments supports power, brightness and whole-controller presets; direct color control belongs to the segments.\n\nLights are sorted naturally by name: 2 before 10, then room and entity ID for matching names. Scene setup follows the same order. Currently unavailable lights can also be selected and exported.\n\nEach light shows its state at the time this list is opened: on, off, unavailable, unknown or not loaded yet.",
         "data": {
           "lights": "Garlands"
         }

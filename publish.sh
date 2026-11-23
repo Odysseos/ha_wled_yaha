@@ -16,7 +16,7 @@ if [[ ! -d .git ]]; then
 fi
 git add -- custom_components hacs.json README.md CHANGELOG.md LICENSE tests requirements-dev.txt .github .gitignore publish.sh
 if ! git diff --cached --quiet; then
-    git commit -m 'WLED YaHA 0.1.2: UI setup, multiple garlands and automatic YaHA export'
+    git commit -m 'WLED YaHA 0.1.3: UI setup, multiple garlands and automatic YaHA export'
 fi
 if gh repo view "$repo" >/dev/null 2>&1; then
     remote_url="$(gh repo view "$repo" --json sshUrl --jq .sshUrl)"

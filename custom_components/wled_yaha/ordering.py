@@ -25,6 +25,20 @@ def natural_key(value):
     )
 
 
+def light_status(hass, state):
+    """Distinguish an available but switched-off light from a disconnected one."""
+    russian = str(getattr(hass.config, "language", "en")).startswith("ru")
+    value = state.state if state is not None else None
+    labels = {
+        "on": ("🟢 Включена", "🟢 On"),
+        "off": ("⚪ Выключена", "⚪ Off"),
+        "unavailable": ("🔴 Недоступна", "🔴 Unavailable"),
+        "unknown": ("🟡 Состояние неизвестно", "🟡 State unknown"),
+        None: ("🟡 Ещё не загружена", "🟡 Not loaded yet"),
+    }
+    return labels.get(value, labels["unknown"])[0 if russian else 1]
+
+
 def light_choices(hass):
     devices, areas = dr.async_get(hass), ar.async_get(hass)
     result = []
@@ -51,6 +65,7 @@ def light_choices(hass):
         area = areas.async_get_area(area_id) if area_id else None
         room = area.name if area else ""
         label = " · ".join(part for part in (name, room, entity.entity_id) if part)
+        label += " · " + light_status(hass, state)
         result.append((name, room, entity.entity_id, label))
     result.sort(
         key=lambda item: (

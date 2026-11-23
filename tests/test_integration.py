@@ -26,7 +26,7 @@ from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 
 
-def config_entry(domain, data=None):
+def config_entry(domain, data=None, unique_id=None):
     return ConfigEntry(
         data=data or {},
         discovery_keys={},
@@ -36,7 +36,7 @@ def config_entry(domain, data=None):
         source="user",
         subentries_data=[],
         title=domain,
-        unique_id=domain,
+        unique_id=unique_id or domain,
         version=1,
     )
 
@@ -212,12 +212,13 @@ class IntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(result["errors"])
         self.assertEqual(result["devices"][0]["scenes"], {})
 
-    async def test_existing_scene_mapping_still_requires_available_selector(self):
+    async def test_existing_scene_mapping_exports_with_unavailable_selector(self):
         self.hass.states.async_set(
             self.preset.entity_id, "unavailable", {"options": ["Радуга", "Свеча"]}
         )
-        with self.assertRaises(ServiceValidationError):
-            await self.runtime.export()
+        result = await self.runtime.export()
+        self.assertFalse(result["errors"])
+        self.assertEqual(result["devices"][0]["scenes"]["party"], "Радуга")
 
     async def test_lost_presets_are_not_automatically_cleared_in_options(self):
         self.wled.runtime_data.data.presets.clear()
@@ -316,11 +317,232 @@ class IntegrationTests(unittest.IsolatedAsyncioTestCase):
         await self.runtime.export()
         before = (self.path / DEFAULT_OUTPUT).read_bytes()
         self.hass.states.async_set(self.light.entity_id, "unavailable")
-        with self.assertRaises(ServiceValidationError):
-            await self.runtime.export()
+        await self.runtime.export()
         self.assertEqual(before, (self.path / DEFAULT_OUTPUT).read_bytes())
-        self.assertEqual(self.runtime.status, "error")
-        self.assertTrue(ExportStatus(self.entry).extra_state_attributes["errors"])
+        self.assertEqual(self.runtime.status, "ready")
+        self.assertTrue(ExportStatus(self.entry).extra_state_attributes["warnings"])
+
+    async def add_garland(self, name, key, room="Спальня"):
+        entry = config_entry("wled", unique_id=key)
+        self.hass.config_entries._entries[entry.entry_id] = entry
+        entry.runtime_data = N(data=N(presets={1: N(name="Свеча")}))
+        device = dr.async_get(self.hass).async_get_or_create(
+            config_entry_id=entry.entry_id, identifiers={("wled", key)}, name=name
+        )
+        area = ar.async_get(self.hass).async_get_or_create(room)
+        dr.async_get(self.hass).async_update_device(device.id, area_id=area.id)
+        registry = er.async_get(self.hass)
+        light = registry.async_get_or_create(
+            "light",
+            "wled",
+            key + "_0",
+            config_entry=entry,
+            device_id=device.id,
+            suggested_object_id=key,
+        )
+        preset = registry.async_get_or_create(
+            "select",
+            "wled",
+            key + "_preset",
+            config_entry=entry,
+            device_id=device.id,
+            suggested_object_id=key + "_preset",
+        )
+        self.hass.states.async_set(light.entity_id, "on", {"friendly_name": name})
+        self.hass.states.async_set(preset.entity_id, "Свеча", {"options": ["Свеча"]})
+        return light
+
+    async def test_picker_and_all_scene_steps_share_natural_name_order(self):
+        lights = [
+            await self.add_garland("Гирлянда 10", "ten"),
+            await self.add_garland("Гирлянда 2", "two"),
+            await self.add_garland("гирлянда 1", "one"),
+        ]
+        flow = self.flow()
+        form = await flow.async_step_devices()
+        picker = next(iter(form["data_schema"].schema.values()))
+        self.assertFalse(picker.config["sort"])
+        shown = [
+            o["value"]
+            for o in picker.config["options"]
+            if o["value"] in {e.entity_id for e in lights}
+        ]
+        self.assertEqual(
+            shown, [lights[2].entity_id, lights[1].entity_id, lights[0].entity_id]
+        )
+        result = await flow.async_step_devices({"lights": list(reversed(shown))})
+        scene_order = []
+        while result.get("step_id") == "scenes":
+            scene_order.append(result["description_placeholders"]["entity"])
+            result = await flow.async_step_scenes({"skip_scenes": True})
+        self.assertEqual(scene_order, shown)
+        self.assertEqual([r["entity_id"] for r in flow._draft["lights"]], shown)
+        self.assertEqual(
+            [d["light"] for d in build_preview(self.hass, flow._draft)["devices"]],
+            shown,
+        )
+
+    async def test_same_names_sort_by_room_then_entity_id_and_remain_identifiable(self):
+        first = await self.add_garland("Гирлянда", "garland_10", "Спальня")
+        second = await self.add_garland("Гирлянда", "garland_2", "Спальня")
+        third = await self.add_garland("Гирлянда", "child", "Детская")
+        form = await self.flow().async_step_devices()
+        picker = next(iter(form["data_schema"].schema.values()))
+        options = [
+            o
+            for o in picker.config["options"]
+            if o["value"] in {first.entity_id, second.entity_id, third.entity_id}
+        ]
+        self.assertEqual(
+            [o["value"] for o in options],
+            [third.entity_id, second.entity_id, first.entity_id],
+        )
+        self.assertTrue(all(o["value"] in o["label"] for o in options))
+        self.assertIn("Детская", options[0]["label"])
+
+    async def test_scene_order_stays_as_displayed_if_a_device_is_renamed_during_selection(
+        self,
+    ):
+        first = await self.add_garland("Гирлянда 1", "a")
+        second = await self.add_garland("Гирлянда 2", "b")
+        flow = self.flow()
+        await flow.async_step_devices()
+        er.async_get(self.hass).async_update_entity(
+            first.entity_id, name="Я — переименована"
+        )
+        result = await flow.async_step_devices(
+            {"lights": [second.entity_id, first.entity_id]}
+        )
+        self.assertEqual(result["description_placeholders"]["entity"], first.entity_id)
+
+    async def test_first_export_includes_an_offline_light_without_any_presets(self):
+        self.hass.config_entries.async_update_entry(
+            self.entry,
+            data={
+                **self.options,
+                "lights": [{**self.options["lights"][0], "scenes": {}}],
+            },
+        )
+        self.wled.runtime_data = None
+        self.hass.states.async_set(self.light.entity_id, "unavailable")
+        self.hass.states.async_set(
+            self.preset.entity_id, "unavailable", {"options": []}
+        )
+        result = await self.runtime.export()
+        self.assertTrue(result["written"])
+        self.assertEqual(result["device_count"], 1)
+        self.assertIn(self.light.entity_id, result["yaml"])
+        self.assertFalse(result["errors"])
+
+    async def test_one_offline_device_does_not_block_other_selected_devices(self):
+        other = await self.add_garland("Гирлянда 2", "second")
+        self.hass.config_entries.async_update_entry(
+            self.entry,
+            data={
+                **self.options,
+                "lights": [
+                    {**self.options["lights"][0], "scenes": {}},
+                    {
+                        "entity_id": other.entity_id,
+                        "registry_id": other.id,
+                        "scenes": {},
+                    },
+                ],
+            },
+        )
+        self.hass.states.async_set(self.light.entity_id, "unavailable")
+        result = await self.runtime.export()
+        self.assertFalse(result["errors"])
+        self.assertEqual(
+            {d["light"] for d in result["devices"]},
+            {self.light.entity_id, other.entity_id},
+        )
+
+    async def test_skipping_a_light_without_presets_keeps_remaining_scene_order(self):
+        self.wled.runtime_data.data.presets.clear()
+        self.hass.states.async_set(self.light.entity_id, "unavailable")
+        self.hass.states.async_set(
+            self.preset.entity_id, "unavailable", {"options": []}
+        )
+        er.async_get(self.hass).async_update_entity(
+            self.light.entity_id, name="Гирлянда 1"
+        )
+        second = await self.add_garland("Гирлянда 2", "second")
+        third = await self.add_garland("Гирлянда 3", "third")
+        flow = self.flow()
+        await flow.async_step_devices()
+        result = await flow.async_step_devices(
+            {"lights": [third.entity_id, self.light.entity_id, second.entity_id]}
+        )
+        self.assertEqual(result["description_placeholders"]["entity"], second.entity_id)
+        result = await flow.async_step_scenes({"skip_scenes": True})
+        self.assertEqual(result["description_placeholders"]["entity"], third.entity_id)
+        await flow.async_step_scenes({"skip_scenes": True})
+        result = await flow.async_step_finish(
+            {"auto_export": True, "connect_yaha": True}
+        )
+        self.assertEqual(result["type"], "create_entry")
+
+    async def test_old_export_restores_scene_names_when_both_native_entities_are_offline(
+        self,
+    ):
+        await self.runtime.export()
+        before = (self.path / DEFAULT_OUTPUT).read_bytes()
+        self.wled.runtime_data = None
+        self.hass.states.async_set(self.light.entity_id, "unavailable")
+        self.hass.states.async_set(
+            self.preset.entity_id, "unavailable", {"options": []}
+        )
+        result = await self.runtime.export()
+        self.assertEqual(before, (self.path / DEFAULT_OUTPUT).read_bytes())
+        self.assertEqual(
+            result["devices"][0]["scenes"], {"candle": "Свеча", "party": "Радуга"}
+        )
+
+    async def test_wizard_saves_names_and_settings_after_devices_go_offline(self):
+        flow = self.flow()
+        await flow.async_step_devices({"lights": [self.light.entity_id]})
+        await flow.async_step_scenes({"candle": "id:1", "party": "id:7"})
+        self.assertEqual(
+            flow._draft["lights"][0]["scene_names"],
+            {"candle": "Свеча", "party": "Радуга"},
+        )
+        self.wled.runtime_data = None
+        self.hass.states.async_set(self.light.entity_id, "unavailable")
+        self.hass.states.async_set(
+            self.preset.entity_id, "unavailable", {"options": []}
+        )
+        result = await flow.async_step_finish(
+            {"auto_export": True, "connect_yaha": True}
+        )
+        self.assertEqual(result["type"], "create_entry")
+        self.hass.config_entries.async_update_entry(self.entry, data=result["data"])
+        export = await self.runtime.export()
+        self.assertEqual(export["devices"][0]["scenes"]["party"], "Радуга")
+
+    async def test_offline_without_known_scene_names_exports_light_and_recovers_scenes_later(
+        self,
+    ):
+        self.wled.runtime_data = None
+        self.hass.states.async_set(self.light.entity_id, "unavailable")
+        self.hass.states.async_set(
+            self.preset.entity_id, "unavailable", {"options": []}
+        )
+        result = await self.runtime.export()
+        self.assertTrue(result["written"])
+        self.assertEqual(result["devices"][0]["scenes"], {})
+        self.assertEqual(
+            config_options(self.entry)["lights"][0]["scenes"], {"candle": 1, "party": 7}
+        )
+        self.wled.runtime_data = N(
+            data=N(presets={1: N(name="Свеча"), 7: N(name="Радуга")})
+        )
+        self.hass.states.async_set(self.light.entity_id, "on")
+        self.hass.states.async_set(
+            self.preset.entity_id, "Свеча", {"options": ["Свеча", "Радуга"]}
+        )
+        result = await self.runtime.export()
+        self.assertEqual(result["devices"][0]["scenes"]["party"], "Радуга")
 
     async def test_renamed_preset_keeps_mapping_by_id(self):
         self.wled.runtime_data.data.presets[7] = N(name="Новое имя")

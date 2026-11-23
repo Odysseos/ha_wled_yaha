@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from pathlib import Path
 
 import voluptuous as vol
+import yaml
 from homeassistant.const import EVENT_HOMEASSISTANT_STARTED, Platform
 from homeassistant.core import SupportsResponse, callback
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
@@ -15,7 +17,14 @@ from homeassistant.helpers.event import async_call_later
 from homeassistant.helpers.service import async_register_admin_service
 
 from .connection import apply_connection, plan_connection
-from .generator import DEFAULT_OUTPUT, DOMAIN, build_export, render_export, write_export
+from .generator import (
+    DEFAULT_OUTPUT,
+    DOMAIN,
+    MARKER,
+    build_export,
+    render_export,
+    write_export,
+)
 from .model import config_options, snapshots_for_records
 
 _LOGGER = logging.getLogger(__name__)
@@ -25,13 +34,13 @@ SERVICE = "export_yaha_config"
 SERVICE_SCHEMA = vol.Schema({vol.Optional("dry_run", default=False): cv.boolean})
 
 
-def build_preview(hass, options):
+def build_preview(hass, options, previous_scenes=None):
     settings, snapshots, warnings, errors = snapshots_for_records(
-        hass, options.get("lights", [])
+        hass, options.get("lights", []), previous_scenes
     )
     payload, devices, extra_warnings, extra_errors = build_export(snapshots, settings)
     if not snapshots:
-        errors.append("Не выбрана ни одна доступная гирлянда WLED.")
+        errors.append("Не выбрана ни одна существующая сущность WLED.")
     return {
         "output_file": DEFAULT_OUTPUT,
         "device_count": len(devices),
@@ -40,6 +49,34 @@ def build_preview(hass, options):
         "errors": errors + extra_errors,
         "yaml": render_export(payload),
     }
+
+
+def _read_previous_scenes(config_dir):
+    path = Path(config_dir) / DEFAULT_OUTPUT
+    if not path.exists():
+        return {}
+    text = path.read_text(encoding="utf-8")
+    if not text.startswith(MARKER):
+        return {}
+    payload = yaml.safe_load(text)
+    if not isinstance(payload, dict):
+        return {}
+    result = {}
+    entities = payload.get("entity_config", {})
+    if not isinstance(entities, dict):
+        return {}
+    for entity_id, config in entities.items():
+        if not isinstance(config, dict):
+            continue
+        modes = config.get("modes", {})
+        if not isinstance(modes, dict):
+            continue
+        scenes = modes.get("scene", {})
+        if isinstance(scenes, dict):
+            result[entity_id] = {
+                scene: name for scene, name in scenes.items() if isinstance(name, str)
+            }
+    return result
 
 
 def _write_files(config_dir, text, connect):
@@ -107,7 +144,13 @@ class Runtime:
             if self.closed:
                 raise ServiceValidationError("Интеграция выгружена; экспорт отменён.")
             options = config_options(self.entry)
-            result = build_preview(self.hass, options)
+            try:
+                previous_scenes = await self.hass.async_add_executor_job(
+                    _read_previous_scenes, self.hass.config.config_dir
+                )
+            except (OSError, ValueError, yaml.YAMLError):
+                previous_scenes = {}
+            result = build_preview(self.hass, options, previous_scenes)
             result.update(written=False, changed=False, connection_changed=False)
             try:
                 if options["connect_yaha"]:

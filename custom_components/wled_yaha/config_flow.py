@@ -22,6 +22,7 @@ from .model import (
     resolve_entity,
     snapshots_for_records,
 )
+from .ordering import light_choices
 
 
 def choice_key(value):
@@ -43,6 +44,8 @@ class Wizard:
     def begin(self, settings=None):
         self._draft = deepcopy(settings or {**DEFAULT_OPTIONS, "lights": []})
         self._queue = []
+        self._visible_order = None
+        self._choice_labels = {}
 
     async def _next_device(self):
         self._queue.pop(0)
@@ -53,9 +56,21 @@ class Wizard:
     async def async_step_devices(self, user_input=None):
         if self._draft is None:
             self.begin()
+        choices = light_choices(self.hass)
+        if self._visible_order is None:
+            self._visible_order = [choice["value"] for choice in choices]
+            self._choice_labels = {
+                choice["value"]: choice["label"] for choice in choices
+            }
         errors = {}
         if user_input is not None:
-            selected = user_input.get("lights", [])
+            selected = list(dict.fromkeys(user_input.get("lights", [])))
+            rank = {
+                entity_id: index for index, entity_id in enumerate(self._visible_order)
+            }
+            selected.sort(
+                key=lambda entity_id: (rank.get(entity_id, len(rank)), entity_id)
+            )
             registry = er.async_get(self.hass)
             previous = {r["registry_id"]: r for r in self._draft["lights"]}
             records = []
@@ -90,14 +105,25 @@ class Wizard:
         if not selected:
             snapshots, _, _ = collect_snapshots(self.hass, validate_settings({}))
             selected = [s.light for s in snapshots]
+        selected_set = set(selected)
+        selected = [
+            choice["value"] for choice in choices if choice["value"] in selected_set
+        ]
+        # HA's entity picker sorts independently and submits selection order. An
+        # explicit unsorted option list gives the UI and wizard one shared order.
+        self._visible_order = [choice["value"] for choice in choices]
+        self._choice_labels = {choice["value"]: choice["label"] for choice in choices}
         return self.async_show_form(
             step_id="devices",
             errors=errors,
             data_schema=vol.Schema(
                 {
-                    vol.Required("lights", default=selected): selector.EntitySelector(
-                        selector.EntitySelectorConfig(
-                            domain="light", integration="wled", multiple=True
+                    vol.Required("lights", default=selected): selector.SelectSelector(
+                        selector.SelectSelectorConfig(
+                            options=choices,
+                            multiple=True,
+                            sort=False,
+                            mode=selector.SelectSelectorMode.LIST,
                         )
                     )
                 }
@@ -145,6 +171,22 @@ class Wizard:
             elif any(v not in actual for v in assigned):
                 errors["base"] = "preset_missing"
             else:
+                previous_choices = record.get("scenes", {})
+                previous_names = record.get("scene_names", {})
+                names = {}
+                for scene, choice in selected.items():
+                    if choice is None:
+                        continue
+                    name = (
+                        snapshot.preset_ids.get(choice)
+                        if type(choice) is int
+                        else choice
+                    )
+                    if not name and choice == previous_choices.get(scene):
+                        name = previous_names.get(scene)
+                    if name:
+                        names[scene] = name
+                record["scene_names"] = names
                 record["scenes"] = selected
                 return await self._next_device()
             defaults = selected
@@ -169,7 +211,7 @@ class Wizard:
                 },
             }
         )
-        detail = "\n".join(discovery_errors + snapshot.errors)
+        detail = "\n".join(discovery_errors + snapshot.errors + snapshot.warnings)
         if missing:
             detail += "\nОтсутствуют пресеты: " + ", ".join(missing)
         return self.async_show_form(
@@ -177,7 +219,9 @@ class Wizard:
             data_schema=schema,
             errors=errors,
             description_placeholders={
-                "device": snapshot.name,
+                "device": self._choice_labels.get(
+                    snapshot.light, snapshot.name
+                ).removesuffix(" · " + snapshot.light),
                 "entity": snapshot.light,
                 "number": str(index + 1),
                 "total": str(len(self._draft["lights"])),
@@ -187,6 +231,7 @@ class Wizard:
 
     async def async_step_finish(self, user_input=None):
         errors = {}
+        connection_errors = []
         if user_input is not None:
             self._draft.update(user_input)
         preview = build_preview(self.hass, self._draft)
@@ -202,9 +247,9 @@ class Wizard:
                     else "Будет автоматически добавлен отдельный пакет YaHA. Перед изменением существующего файла создаётся копия .wled-yaha.bak."
                 )
             except (OSError, ValueError) as err:
-                preview["errors"].append(str(err))
+                connection_errors.append(str(err))
         if user_input is not None:
-            if preview["errors"]:
+            if connection_errors:
                 errors["base"] = "validation_failed"
             else:
                 return self.async_create_entry(title="WLED YaHA", data=self._draft)
@@ -214,8 +259,16 @@ class Wizard:
                 f"{ALIASES[k][0]} → {v}" for k, v in device["scenes"].items()
             )
             lines.append(f"**{device['name']}**: {rows or 'только управление светом'}")
+        pending = (
+            [
+                "Настройки можно сохранить. Экспорт будет повторён после устранения следующих проблем:",
+                *preview["errors"],
+            ]
+            if preview["errors"]
+            else []
+        )
         summary = "\n\n".join(
-            lines + [connection] + preview["errors"] + preview["warnings"]
+            lines + [connection] + connection_errors + pending + preview["warnings"]
         )
         return self.async_show_form(
             step_id="finish",

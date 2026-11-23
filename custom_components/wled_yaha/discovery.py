@@ -88,9 +88,7 @@ def collect_snapshots(
             for e in entries
             if e.entity_id.startswith("select.") and e.unique_id.endswith("_preset")
         ]
-        preset_entry = (
-            presets[0] if len(presets) == 1 and presets[0].disabled_by is None else None
-        )
+        preset_entry = presets[0] if len(presets) == 1 else None
         preset_state = hass.states.get(preset_entry.entity_id) if preset_entry else None
         # IDs come from coordinator.data.presets. HA sorts select options by NAME.
         options = (
@@ -99,6 +97,14 @@ def collect_snapshots(
             else sorted(ids.values())
         )
         options = [n for n in options if isinstance(n, str)]
+        preset_online = bool(
+            preset_entry
+            and preset_entry.disabled_by is None
+            and preset_state
+            and preset_state.state not in {"unknown", "unavailable"}
+        )
+        if not preset_online and isinstance(raw_presets, dict):
+            options = sorted(ids.values())
 
         for light in sorted(selected, key=lambda e: e.entity_id):
             state = hass.states.get(light.entity_id)
@@ -120,11 +126,13 @@ def collect_snapshots(
                 preset_entity=preset_entry.entity_id if preset_entry else None,
                 options=options,
                 preset_ids=ids,
+                online=bool(state and state.state not in {"unknown", "unavailable"}),
+                preset_online=preset_online,
             )
             if state is None or state.state in {"unknown", "unavailable"}:
-                snapshot.errors.append(
-                    f"{light.entity_id}: устройство ещё не загружено или недоступно. "
-                    "Файл не будет перезаписан, чтобы не потерять его режимы."
+                snapshot.warnings.append(
+                    f"{light.entity_id}: сейчас недоступна в штатной WLED-интеграции. "
+                    "Гирлянда всё равно будет включена в экспорт YaHA."
                 )
             chosen_ids = {
                 **settings.get("preset_ids", {}),
@@ -137,12 +145,12 @@ def collect_snapshots(
             )
             # An unavailable preset selector must not block ordinary light control
             # when the user has explicitly left every scene disabled.
-            preset_problems = snapshot.warnings if scenes_disabled else snapshot.errors
+            preset_problems = snapshot.warnings
             if len(presets) > 1:
                 preset_problems.append(
                     f"{light.entity_id}: найдено несколько сущностей выбора пресетов."
                 )
-            elif presets and preset_entry is None:
+            elif preset_entry and preset_entry.disabled_by is not None:
                 preset_problems.append(
                     f"{light.entity_id}: включи отключённую сущность {presets[0].entity_id}."
                 )
@@ -156,15 +164,17 @@ def collect_snapshots(
                         f"{light.entity_id}: нет select пресетов; будут только функции света."
                     )
             elif preset_state is None:
-                preset_problems.append(
-                    f"{preset_entry.entity_id}: сущность пока не загружена."
-                )
+                if not scenes_disabled:
+                    preset_problems.append(
+                        f"{preset_entry.entity_id}: пока не загружена; используем известные соответствия сцен."
+                    )
             elif preset_state.state == "unavailable" and (
                 options or raw_presets is None
             ):
-                preset_problems.append(
-                    f"{preset_entry.entity_id}: выбор пресетов недоступен."
-                )
+                if not scenes_disabled:
+                    preset_problems.append(
+                        f"{preset_entry.entity_id}: сейчас недоступна; используем известные соответствия сцен."
+                    )
             snapshots.append(snapshot)
 
     if missing := requested - found:

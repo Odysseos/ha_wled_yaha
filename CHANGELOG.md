@@ -1,3 +1,10 @@
+# 0.1.2
+
+- Export selected WLED lights even when the native light or preset selector is currently unavailable.
+- Preserve known scene names in configuration and recover legacy mappings from the previous owned export while offline. Unknown scenes are retried when the catalog becomes available; their IDs remain saved.
+- Allow saving the configuration independently of live device availability.
+- Use one explicit natural order for the device picker, scene steps and summary; break duplicate-name ties by room and entity ID.
+
 # 0.1.1
 
 - Allow setup without any WLED presets or Yandex scene mappings.

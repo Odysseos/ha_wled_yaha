@@ -1,6 +1,7 @@
 Validation: 2026-11-23 (Europe/Moscow)
-WLED YaHA 0.1.1; Home Assistant 2026.10.4; Python 3.14.10.
-55 tests passed, including setup/export without presets, disabled preset selector, optional scene fields and explicit skip, and preserving existing mappings when presets disappear.
+WLED YaHA 0.1.2; Home Assistant 2026.10.4; Python 3.14.10.
+64 tests passed.
+Coverage includes explicit picker/scene/summary ordering, natural numeric order, duplicate labels, rename while selecting, skipped empty-catalog devices, first offline export, mixed online/offline devices, cached scene recovery and later catalog recovery.
 WLED network data and YaHA reload handler supplied by fixtures; no physical device or Yandex account was contacted.
 ruff check --isolated --select F,I,E9: passed.
 
@@ -45,8 +46,9 @@ test_rejects_symlink_file (test_generator.WriteTests.test_rejects_symlink_file) 
 test_rejects_symlink_parent (test_generator.WriteTests.test_rejects_symlink_parent) ... ok
 test_button_exports_and_sensor_reads_runtime (test_integration.IntegrationTests.test_button_exports_and_sensor_reads_runtime) ... ok
 test_duplicate_scene_assignment_is_rejected (test_integration.IntegrationTests.test_duplicate_scene_assignment_is_rejected) ... ok
-test_existing_scene_mapping_still_requires_available_selector (test_integration.IntegrationTests.test_existing_scene_mapping_still_requires_available_selector) ... ok
+test_existing_scene_mapping_exports_with_unavailable_selector (test_integration.IntegrationTests.test_existing_scene_mapping_exports_with_unavailable_selector) ... ok
 test_export_connects_packages_backups_and_reloads_yaha (test_integration.IntegrationTests.test_export_connects_packages_backups_and_reloads_yaha) ... ok
+test_first_export_includes_an_offline_light_without_any_presets (test_integration.IntegrationTests.test_first_export_includes_an_offline_light_without_any_presets) ... ok
 test_lost_presets_are_not_automatically_cleared_in_options (test_integration.IntegrationTests.test_lost_presets_are_not_automatically_cleared_in_options) ... ok
 test_missing_device_preserves_previous_export (test_integration.IntegrationTests.test_missing_device_preserves_previous_export) ... ok
 test_missing_preset_is_not_silently_reassigned (test_integration.IntegrationTests.test_missing_preset_is_not_silently_reassigned) ... ok
@@ -55,14 +57,22 @@ test_no_presets_with_disabled_selector_does_not_block_setup (test_integration.In
 test_no_scene_mapping_ignores_unavailable_preset_selector (test_integration.IntegrationTests.test_no_scene_mapping_ignores_unavailable_preset_selector) ... ok
 test_no_selected_entities_does_not_auto_discover_others (test_integration.IntegrationTests.test_no_selected_entities_does_not_auto_discover_others) ... ok
 test_offline_device_preserves_previous_export_and_status (test_integration.IntegrationTests.test_offline_device_preserves_previous_export_and_status) ... ok
+test_offline_without_known_scene_names_exports_light_and_recovers_scenes_later (test_integration.IntegrationTests.test_offline_without_known_scene_names_exports_light_and_recovers_scenes_later) ... ok
+test_old_export_restores_scene_names_when_both_native_entities_are_offline (test_integration.IntegrationTests.test_old_export_restores_scene_names_when_both_native_entities_are_offline) ... ok
+test_one_offline_device_does_not_block_other_selected_devices (test_integration.IntegrationTests.test_one_offline_device_does_not_block_other_selected_devices) ... ok
 test_options_draft_cancellation_does_not_modify_saved_mapping (test_integration.IntegrationTests.test_options_draft_cancellation_does_not_modify_saved_mapping) ... ok
+test_picker_and_all_scene_steps_share_natural_name_order (test_integration.IntegrationTests.test_picker_and_all_scene_steps_share_natural_name_order) ... ok
 test_preview_never_writes_files (test_integration.IntegrationTests.test_preview_never_writes_files) ... ok
 test_renamed_entities_follow_stable_registry_identity (test_integration.IntegrationTests.test_renamed_entities_follow_stable_registry_identity) ... ok
 test_renamed_preset_keeps_mapping_by_id (test_integration.IntegrationTests.test_renamed_preset_keeps_mapping_by_id) ... ok
+test_same_names_sort_by_room_then_entity_id_and_remain_identifiable (test_integration.IntegrationTests.test_same_names_sort_by_room_then_entity_id_and_remain_identifiable) ... ok
 test_scene_fields_are_optional_and_skip_ignores_default_mappings (test_integration.IntegrationTests.test_scene_fields_are_optional_and_skip_ignores_default_mappings) ... ok
+test_scene_order_stays_as_displayed_if_a_device_is_renamed_during_selection (test_integration.IntegrationTests.test_scene_order_stays_as_displayed_if_a_device_is_renamed_during_selection) ... ok
+test_skipping_a_light_without_presets_keeps_remaining_scene_order (test_integration.IntegrationTests.test_skipping_a_light_without_presets_keeps_remaining_scene_order) ... ok
+test_wizard_saves_names_and_settings_after_devices_go_offline (test_integration.IntegrationTests.test_wizard_saves_names_and_settings_after_devices_go_offline) ... ok
 test_wizard_selects_real_entities_and_actual_preset_ids (test_integration.IntegrationTests.test_wizard_selects_real_entities_and_actual_preset_ids) ... ok
 
 ----------------------------------------------------------------------
-Ran 55 tests in 0.201s
+Ran 64 tests in 0.287s
 
 OK

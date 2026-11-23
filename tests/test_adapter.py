@@ -134,4 +134,4 @@ class DiscoveryTests(unittest.TestCase):
         snapshots, _, _ = integration.collect_snapshots(
             make_hass("unused", entries), validate_settings({})
         )
-        self.assertTrue(any("отключённую" in e for e in snapshots[0].errors))
+        self.assertTrue(any("отключённую" in e for e in snapshots[0].warnings))

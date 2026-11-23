@@ -10,3 +10,4 @@ Initial integration release.
 - YaHA reload, export button, status sensor and downloadable diagnostics.
 - Preserve the previous export when a selected device or preset is unavailable or missing.
 - Russian and English interface translations.
+- Branded integration icon using the owner's original Greek ship eye SVG.

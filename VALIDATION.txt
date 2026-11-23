@@ -60,3 +60,5 @@ test_wizard_selects_real_entities_and_actual_preset_ids (test_integration.Integr
 Ran 49 tests in 0.141s
 
 OK
+
+Brand update (2026-11-23): PNG dimensions 256x256 / 512x512 checked; outer-corner alpha preserved; both author SVG paths match the source exactly; original icon pixels outside badge bounds unchanged.

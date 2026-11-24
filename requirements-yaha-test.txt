@@ -1,0 +1,6 @@
+# YaHA and the HA camera/stream modules imported by its device registry.
+# Test-only dependencies, not runtime requirements for WLED YaHA.
+pydantic==2.14.4
+numpy==2.4.2
+PyTurboJPEG==1.8.3
+av==19.0.0

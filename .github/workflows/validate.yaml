@@ -13,8 +13,15 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.14'
-      - run: pip install -r requirements-dev.txt
+      - uses: actions/checkout@v4
+        with:
+          repository: dext0r/yandex_smart_home
+          ref: 7d1121923c91fdd190f3d13d75be8896aed18735
+          path: .yaha-test-source
+      - run: pip install -r requirements-dev.txt -r requirements-yaha-test.txt
       - run: python -c 'import homeassistant; import unittest; unittest.main(module=None, argv=["unittest", "discover", "-s", "tests", "-v"])'
+        env:
+          YAHA_TEST_SOURCE: ${{ github.workspace }}/.yaha-test-source
   frontend:
     runs-on: ubuntu-latest
     steps:

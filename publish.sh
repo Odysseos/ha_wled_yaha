@@ -14,9 +14,9 @@ fi
 if [[ ! -d .git ]]; then
     git init -b main
 fi
-git add -- custom_components hacs.json README.md CHANGELOG.md LICENSE NOTICE VALIDATION.md tests requirements-dev.txt package.json package-lock.json .github .gitignore publish.sh
+git add -- custom_components hacs.json README.md CHANGELOG.md LICENSE NOTICE VALIDATION.md tests requirements-dev.txt requirements-yaha-test.txt package.json package-lock.json .github .gitignore publish.sh
 if ! git diff --cached --quiet; then
-    git commit -m 'WLED YaHA 0.2.1: remove area-assigned service device'
+    git commit -m 'WLED YaHA 0.2.2: discover offline garlands through YaHA'
 fi
 if gh repo view "$repo" >/dev/null 2>&1; then
     remote_url="$(gh repo view "$repo" --json sshUrl --jq .sshUrl)"

@@ -8,7 +8,11 @@ from pathlib import Path
 
 import voluptuous as vol
 import yaml
-from homeassistant.const import EVENT_HOMEASSISTANT_STARTED, Platform
+from homeassistant.const import (
+    EVENT_COMPONENT_LOADED,
+    EVENT_HOMEASSISTANT_STARTED,
+    Platform,
+)
 from homeassistant.core import SupportsResponse, callback
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers import config_validation as cv
@@ -96,6 +100,7 @@ class Runtime:
         self.status = "pending"
         self.cancel_pending = None
         self.closed = False
+        self.discovery = None
 
     @callback
     def schedule(self, *_):
@@ -151,6 +156,8 @@ class Runtime:
             if self.closed:
                 raise ServiceValidationError("Интеграция выгружена; экспорт отменён.")
             options = config_options(self.entry)
+            if self.discovery is not None:
+                self.discovery.install()
             try:
                 previous_scenes = await self.hass.async_add_executor_job(
                     _read_previous_scenes, self.hass.config.config_dir
@@ -208,6 +215,15 @@ class Runtime:
                         "YaHA не загружена. Добавь/включи её и перечитай настройки YaHA."
                     )
                     result["yaha_reloaded"] = False
+                if self.discovery is not None:
+                    self.discovery.install()
+                    result["yaha_discovery"] = self.discovery.diagnostics()
+                    if self.discovery.status != "active":
+                        result["warnings"].append(
+                            "Адаптер обнаружения недоступных гирлянд не активен: "
+                            + self.discovery.status
+                            + ". Обнови/загрузи YaHA; см. диагностику."
+                        )
                 self.status = (
                     "ready" if result.get("yaha_reloaded", True) else "reload_required"
                 )
@@ -226,6 +242,8 @@ class Runtime:
     @callback
     def close(self):
         self.closed = True
+        if self.discovery is not None:
+            self.discovery.close()
         if self.cancel_pending:
             self.cancel_pending()
             self.cancel_pending = None
@@ -306,11 +324,14 @@ def _remove_legacy_bridge_device(hass, entry):
 
 async def async_setup_entry(hass, entry):
     from . import frontend
+    from .yaha_adapter import DiscoveryAdapter
 
     _remove_legacy_bridge_device(hass, entry)
     runtime = entry.runtime_data = Runtime(hass, entry)
-    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    runtime.discovery = DiscoveryAdapter(runtime)
+    runtime.discovery.install()
     try:
+        await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
         await frontend.async_register(hass)
     except Exception:
         runtime.close()
@@ -318,6 +339,11 @@ async def async_setup_entry(hass, entry):
         raise
     entry.async_on_unload(lambda: frontend.unregister(hass))
     entry.async_on_unload(runtime.close)
+    entry.async_on_unload(
+        hass.bus.async_listen(
+            EVENT_COMPONENT_LOADED, runtime.discovery.component_loaded
+        )
+    )
     for event in (
         "state_changed",
         "entity_registry_updated",

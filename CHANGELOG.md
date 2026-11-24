@@ -1,3 +1,11 @@
+# 0.2.2
+
+- Register selected offline WLED lights in YaHA discovery, including controllers with no current HA state. Preserve original entity IDs, names, per-device rooms and known registry capabilities.
+- Keep native unavailable state, state queries and actions unchanged: YaHA reports DEVICE_UNREACHABLE while the controller is offline. Reconnecting uses the same entity without a second device.
+- Use a narrow, reversible in-memory adapter for YaHA's device-list provider. Do not modify YaHA files, its query/action handlers, HA states or unrelated devices; restore the original provider on unload.
+- Validate the adapter API before attaching, expose its status in export diagnostics and warn if it cannot be attached. Attach after late YaHA setup as well as on WLED YaHA startup.
+- Add real request-handler tests against pinned YaHA 1.1.3 source: five offline lights, missing state, descriptions, query/action errors, filters, reconnecting and unloading. Run these checks in CI.
+
 # 0.2.1
 
 - Stop creating the synthetic YaHA preset bridge device. Export controls and diagnostics are standalone integration entities; setup no longer asks for an area for a bridge device spanning multiple garlands.

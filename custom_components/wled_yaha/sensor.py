@@ -36,6 +36,7 @@ class ExportStatus(BridgeEntity, SensorEntity):
                 "errors",
                 "connection_changed",
                 "yaha_reloaded",
+                "yaha_discovery",
             )
             if k in result
         }

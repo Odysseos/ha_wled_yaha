@@ -897,7 +897,7 @@ class IntegrationTests(unittest.IsolatedAsyncioTestCase):
         editor.websocket_subscribe(self.hass, connection, {"id": 2})
         await self.hass.async_block_till_done()
         self.assertEqual(
-            connection.send_result.call_args_list[0].args[1]["version"], "0.2.1"
+            connection.send_result.call_args_list[0].args[1]["version"], "0.2.2"
         )
         async_dispatcher_send(self.hass, "wled_yaha_updated")
         await self.hass.async_block_till_done()
@@ -1034,3 +1034,206 @@ class IntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(rows[self.light.entity_id]["room"], "Спальня")
         self.assertEqual(rows[second_light.entity_id]["room"], "Гостиная")
         self.assertIsNone(devices.async_get(legacy.id))
+
+    def fake_yaha_handlers(self):
+        from types import ModuleType
+
+        handlers = ModuleType("custom_components.yandex_smart_home.handlers")
+
+        class Device:
+            def __init__(self, hass, data, entity_id, state):
+                self.id, self.state = entity_id, state
+
+        async def original(hass, data):
+            return [
+                Device(hass, data, state.entity_id, state)
+                for state in hass.states.async_all()
+                if state.entity_id.startswith("light.")
+                and state.state != "unavailable"
+                and data.should_expose(state.entity_id)
+            ]
+
+        handlers.Device, handlers.async_get_devices = Device, original
+        return handlers
+
+    async def test_discovery_adapter_adds_selected_offline_lights_without_changing_state(
+        self,
+    ):
+        from unittest.mock import patch
+
+        from custom_components.wled_yaha.yaha_adapter import DiscoveryAdapter
+
+        handlers = self.fake_yaha_handlers()
+        self.hass.states.async_set(self.light.entity_id, "unavailable")
+        self.hass.states.async_set("light.unrelated", "unavailable")
+        original_state = self.hass.states.get(self.light.entity_id)
+        with patch.dict("sys.modules", {handlers.__name__: handlers}):
+            self.runtime.discovery = adapter = DiscoveryAdapter(self.runtime)
+            adapter.install()
+            self.assertEqual(adapter.status, "active")
+            result = await handlers.async_get_devices(
+                self.hass, N(should_expose=lambda _: True)
+            )
+            self.assertEqual([item.id for item in result], [self.light.entity_id])
+            self.assertEqual(result[0].state.state, "unavailable")
+            self.assertIs(self.hass.states.get(self.light.entity_id), original_state)
+            self.assertEqual(
+                self.hass.states.get("light.unrelated").state, "unavailable"
+            )
+            adapter.close()
+
+    async def test_discovery_adapter_obeys_yaha_filter_and_disabled_export_checkbox(
+        self,
+    ):
+        from unittest.mock import patch
+
+        from custom_components.wled_yaha.yaha_adapter import DiscoveryAdapter
+
+        handlers = self.fake_yaha_handlers()
+        self.hass.states.async_set(self.light.entity_id, "unavailable")
+        with patch.dict("sys.modules", {handlers.__name__: handlers}):
+            adapter = DiscoveryAdapter(self.runtime)
+            adapter.install()
+            self.assertEqual(
+                await handlers.async_get_devices(
+                    self.hass, N(should_expose=lambda _: False)
+                ),
+                [],
+            )
+            self.options["lights"][0]["enabled"] = False
+            self.assertEqual(
+                await handlers.async_get_devices(
+                    self.hass, N(should_expose=lambda _: True)
+                ),
+                [],
+            )
+            adapter.close()
+
+    async def test_discovery_adapter_handles_missing_state_using_registry_capabilities(
+        self,
+    ):
+        from unittest.mock import patch
+
+        from custom_components.wled_yaha.yaha_adapter import DiscoveryAdapter
+
+        handlers = self.fake_yaha_handlers()
+        self.hass.states.async_remove(self.light.entity_id)
+        er.async_get(self.hass).async_update_entity(
+            self.light.entity_id, capabilities={"supported_color_modes": ["rgb"]}
+        )
+        with patch.dict("sys.modules", {handlers.__name__: handlers}):
+            adapter = DiscoveryAdapter(self.runtime)
+            adapter.install()
+            result = await handlers.async_get_devices(
+                self.hass, N(should_expose=lambda _: True)
+            )
+            self.assertEqual(result[0].state.state, "unavailable")
+            self.assertEqual(
+                result[0].state.attributes["supported_color_modes"], ["rgb"]
+            )
+            self.assertIsNone(self.hass.states.get(self.light.entity_id))
+            adapter.close()
+
+    async def test_discovery_adapter_is_idempotent_and_runtime_unload_restores_yaha(
+        self,
+    ):
+        from unittest.mock import patch
+
+        from custom_components.wled_yaha.yaha_adapter import DiscoveryAdapter
+
+        handlers = self.fake_yaha_handlers()
+        original = handlers.async_get_devices
+        with patch.dict("sys.modules", {handlers.__name__: handlers}):
+            self.runtime.discovery = adapter = DiscoveryAdapter(self.runtime)
+            adapter.install()
+            first = handlers.async_get_devices
+            adapter.install()
+            self.assertIs(handlers.async_get_devices, first)
+            result = await handlers.async_get_devices(
+                self.hass, N(should_expose=lambda _: True)
+            )
+            self.assertEqual([item.id for item in result], [self.light.entity_id])
+            self.runtime.close()
+            self.assertIs(handlers.async_get_devices, original)
+
+    async def test_discovery_adapter_rejects_incompatible_api_without_mutating_it(self):
+        from unittest.mock import patch
+
+        from custom_components.wled_yaha.yaha_adapter import DiscoveryAdapter
+
+        handlers = self.fake_yaha_handlers()
+        handlers.async_get_devices = lambda: []
+        original = handlers.async_get_devices
+        with patch.dict("sys.modules", {handlers.__name__: handlers}):
+            adapter = DiscoveryAdapter(self.runtime)
+            with self.assertLogs(
+                "custom_components.wled_yaha.yaha_adapter", level="WARNING"
+            ):
+                adapter.install()
+            self.assertEqual(adapter.status, "unsupported")
+            self.assertIs(handlers.async_get_devices, original)
+            adapter.close()
+
+    async def test_discovery_adapter_never_removes_a_later_external_wrapper(self):
+        from unittest.mock import patch
+
+        from custom_components.wled_yaha.yaha_adapter import DiscoveryAdapter
+
+        handlers = self.fake_yaha_handlers()
+        with patch.dict("sys.modules", {handlers.__name__: handlers}):
+            adapter = DiscoveryAdapter(self.runtime)
+            adapter.install()
+
+            async def external(hass, data):
+                return []
+
+            handlers.async_get_devices = external
+            adapter.close()
+            self.assertIs(handlers.async_get_devices, external)
+
+    async def test_discovery_adapter_attaches_after_late_yaha_setup(self):
+        import sys
+        from unittest.mock import patch
+
+        from custom_components.wled_yaha.yaha_adapter import DiscoveryAdapter
+
+        handlers = self.fake_yaha_handlers()
+        with patch.dict(
+            sys.modules,
+            {
+                handlers.__name__: None,
+                "homeassistant.components.yandex_smart_home.handlers": None,
+            },
+        ):
+            adapter = DiscoveryAdapter(self.runtime)
+            adapter.install()
+            self.assertEqual(adapter.status, "waiting")
+            sys.modules[handlers.__name__] = handlers
+            adapter.component_loaded(N(data={"component": "wled"}))
+            self.assertEqual(adapter.status, "waiting")
+            adapter.component_loaded(N(data={"component": "yandex_smart_home"}))
+            self.assertEqual(adapter.status, "active")
+            adapter.close()
+
+    async def test_setup_failure_restores_yaha_provider(self):
+        from unittest.mock import AsyncMock, patch
+
+        from custom_components.wled_yaha import async_setup_entry
+
+        handlers = self.fake_yaha_handlers()
+        original = handlers.async_get_devices
+        with (
+            patch.dict("sys.modules", {handlers.__name__: handlers}),
+            patch.object(
+                ConfigEntries,
+                "async_forward_entry_setups",
+                AsyncMock(side_effect=RuntimeError("setup failed")),
+            ),
+            patch.object(
+                ConfigEntries, "async_unload_platforms", AsyncMock(return_value=True)
+            ),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "setup failed"):
+                await async_setup_entry(self.hass, self.entry)
+            self.assertTrue(self.entry.runtime_data.closed)
+            self.assertIs(handlers.async_get_devices, original)

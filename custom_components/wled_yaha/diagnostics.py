@@ -10,4 +10,7 @@ async def async_get_config_entry_diagnostics(hass, entry):
         "settings": config_options(entry),
         "current": build_preview(hass, config_options(entry)),
         "last_export": runtime.result if runtime else None,
+        "yaha_discovery": runtime.discovery.diagnostics()
+        if runtime and runtime.discovery
+        else None,
     }

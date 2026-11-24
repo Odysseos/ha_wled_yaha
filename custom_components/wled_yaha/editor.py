@@ -142,6 +142,7 @@ def snapshot(hass, runtime):
                     "errors",
                     "output_file",
                     "yaha_reloaded",
+                    "yaha_discovery",
                 )
                 if k in last
             },
